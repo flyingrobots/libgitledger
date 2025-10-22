@@ -1,0 +1,57 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS metadata
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Temporary files
+*.swp
+*.swo
+*.tmp
+*.log
+*~
+
+# Build output directories
+build/
+dist/
+
+# C build artifacts
+*.d
+*.o
+*.obj
+*.lo
+*.la
+*.al
+*.libs
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+*.stackdump
+
+# Debugging artifacts
+*.dSYM/
+*.su
+*.ncb
+*.sdf
+*.opendb
+*.vcxproj.user
+*.pdb
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.gcov
+
+# Project-specific
+.obsidian/
