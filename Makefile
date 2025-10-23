@@ -1,6 +1,10 @@
-.PHONY: cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
+.PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
         host-format-check host-tidy host-lint
+
+all: both
+
+test: test-both
 
 CLANG_FORMAT ?= clang-format
 CLANG_TIDY ?= clang-tidy
