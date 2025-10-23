@@ -24,7 +24,7 @@
 
 #### 2. Build systems
 
-- [ ] **Author dual build files**: create root `CMakeLists.txt` *and* `meson.build`; ensure both produce targets `gitledger`, `gitledger_tests`, `mg-ledger` (release + dev variants).
+- [ ] **Author dual build files**: create root `CMakeLists.txt` *and* `meson.build`; ensure both produce targets `gitledger`, `gitledger_tests`, `git-ledger` (release + dev variants).
 - [ ] Add shared warning and visibility flags (`-Wall`, `-Wextra`, `-Werror`, `-std=c11`, `-fvisibility=hidden`) to both configurations.
 
 #### 3. Third‑party deps
@@ -268,7 +268,7 @@ Tasks
 
 AI‑OFF Steps
 
-- Vendor CRoaring; write serializers; implement rebuild command; add CLI mg-ledger query.
+- Vendor CRoaring; write serializers; implement rebuild command; add CLI git-ledger query.
 - Use memory‑mapped files in temp during build to avoid RAM blowup; write back atomically to cache ref.
 
 Tests
@@ -448,19 +448,19 @@ Acceptance Criteria per Milestone
 
 ⸻
 
-CLI Demo: mg-ledger (reference only)
+CLI Demo: git-ledger (reference only)
 
 Minimal CLI to prove library flows:
 
-- mg-ledger open <path> -L <name>
-- mg-ledger append -L <name> --file payload.json --encoder shiplog
-- mg-ledger note add -L <name> <oid> --file out.log
-- mg-ledger tag-assoc -L <name> v1.2.3 <oid>
-- mg-ledger policy set -L <name> policy.json
-- mg-ledger trust set -L <name> trust.json
-- mg-ledger cache rebuild -L <name>
-- mg-ledger query -L <name> +service:api -status:fail
-- mg-ledger verify -L <name> --deep
+- git-ledger open <path> -L <name>
+- git-ledger append -L <name> --file payload.json --encoder shiplog
+- git-ledger note add -L <name> <oid> --file out.log
+- git-ledger tag-assoc -L <name> v1.2.3 <oid>
+- git-ledger policy set -L <name> policy.json
+- git-ledger trust set -L <name> trust.json
+- git-ledger cache rebuild -L <name>
+- git-ledger query -L <name> +service:api -status:fail
+- git-ledger verify -L <name> --deep
 
 ⸻
 

@@ -247,7 +247,7 @@ graph LR
 ```mermaid
 graph LR
     subgraph "Clients"
-        A["CLI Tool (e.g., mg-ledger)"]
+        A["CLI Tool (e.g., git-ledger)"]
         B["Higher-Level App (e.g., git-mind)"]
         C["Language Bindings (Go, JS, Python)"]
     end
@@ -730,7 +730,7 @@ libgitledger/
 ├─ core/policy_trust/ # policy & trust logic
 ├─ adapters/ # logger/fs/env/signing adapters
 ├─ tests/ # unit + integration
-└─ cli/ # 'mg-ledger' demo tool
+└─ cli/ # 'git-ledger' demo tool
 ```
 
 This is your earlier tree, aligned to the hexagonal structure you used in git‑mind.

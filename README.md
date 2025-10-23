@@ -1,4 +1,4 @@
-# libgitledger
+# `libgitledger`
 
 Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
@@ -11,12 +11,14 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
 ## Contributing
 
-- Open work items using the **Milestone Task** issue template (`.github/ISSUE_TEMPLATE/milestone_task.md`).
+- Create work items using the **Milestone Task** issue template (`.github/ISSUE_TEMPLATE/milestone_task.md`).
 - Issue drafts can be copied from `docs/ISSUE-DRAFTS.md`; regenerate with `python3 tools/automation/generate_issue_drafts.py` after editing the breakdown.
 - Pull requests must follow `.github/pull_request_template.md` and exercise both build systems (CMake + Meson).
 - See `CONTRIBUTING.md` for detailed workflow expectations.
 
 ## Building
+
+Why do we have two build systems? Well... It's a long story.
 
 ### CMake (Debug and Release)
 
@@ -46,16 +48,39 @@ meson test -C meson-release
 
 Use the provided `Makefile` shortcuts:
 
-```
+#### Build
+
+```bash
 make cmake        # configure + build CMake debug and release
 make meson        # configure + build Meson debug and release
 make both         # run both cmake + meson builds
+```
+
+#### Test
+
+```bash
 make test-cmake   # run ctest for debug/release builds
 make test-meson   # run meson test for debug/release builds
 make test-both    # execute all tests
+```
+
+#### Clean
+
+```bash
 make clean        # remove build directories and artefacts
+```
+
+#### Format
+
+```
+```bash
 make format       # apply clang-format in-place
 make format-check # verify clang-format compliance
+```
+
+#### Lint
+
+```bash
 make tidy         # run clang-tidy with project configuration
 make lint         # run both format-check and tidy
 ```
@@ -73,4 +98,4 @@ make lint         # run both format-check and tidy
 
 ## License
 
-libgitledger is released under the [MIND-UCAL License v1.0](LICENSE), aligned with the Universal Charter. See `NOTICE` for attribution details.
+`libgitledger` is released under the [MIND-UCAL License v1.0](LICENSE), aligned with the Universal Charter. See [`NOTICE`](NOTICE) for attribution details.

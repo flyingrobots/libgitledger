@@ -54,7 +54,7 @@ author `CMakeLists.txt` + `meson.build` with shared flags.
 ## Deliverables
 - [ ] debug/release targets for `gitledger`
 - [ ] `gitledger_tests`
-- [ ] `mg-ledger`
+- [ ] `git-ledger`
 
 ## Implementation Notes
 - Add details during execution
@@ -854,7 +854,7 @@ assignees: []
 ---
 
 ## Summary
-mg-ledger commands for notes/tags.
+git-ledger commands for notes/tags.
 
 ## Links / Context
 - Project plan: docs/PROJECT-PLAN.md
@@ -1040,7 +1040,7 @@ assignees: []
 ---
 
 ## Summary
-mg-ledger query UX.
+git-ledger query UX.
 
 ## Links / Context
 - Project plan: docs/PROJECT-PLAN.md
