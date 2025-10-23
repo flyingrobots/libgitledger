@@ -90,7 +90,7 @@ jobs:
         shell: pwsh
 
       - name: Configure CMake (Ninja)
-        run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=23
+        run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=17 -DCMAKE_C_STANDARD_REQUIRED=ON
         shell: pwsh
 
       - name: Build
