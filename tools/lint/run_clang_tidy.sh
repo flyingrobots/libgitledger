@@ -32,20 +32,27 @@ fi
 
 declare -a filtered_sources=()
 
+# Allow callers to override which top-level directories are eligible for analysis.
+allowed_roots_raw="${CLANG_TIDY_ALLOWED_ROOTS:-src:libgitledger}"
+
 while IFS= read -r line; do
   filtered_sources+=("${line}")
-done < <(python3 - "$build_dir" <<'PY'
+done < <(python3 - "$build_dir" "$allowed_roots_raw" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 build_dir = Path(sys.argv[1])
+allowed_roots = {part for part in sys.argv[2].split(':') if part}
 db_path = build_dir / "compile_commands.json"
 data = json.loads(db_path.read_text())
 repo_root = Path.cwd().resolve()
-allowed_roots = {"src", "libgitledger"}
 filtered = []
 sources = []
+
+if not allowed_roots:
+    sys.stderr.write("clang-tidy: CLANG_TIDY_ALLOWED_ROOTS expanded to an empty list\n")
+    sys.exit(1)
 
 for entry in data:
     directory = Path(entry.get("directory", build_dir))
@@ -70,8 +77,9 @@ PY
 )
 
 if [[ ${#filtered_sources[@]} -eq 0 ]]; then
-  echo "clang-tidy: no eligible C sources after filtering"
-  exit 0
+  echo "clang-tidy: no eligible C sources after filtering" >&2
+  echo "Set CLANG_TIDY_ALLOWED_ROOTS to expand the search if this was unexpected" >&2
+  exit 1
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then
