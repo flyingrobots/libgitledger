@@ -1,6 +1,8 @@
 #ifndef GITLEDGER_LIBGITLEDGER_VERSION_H
 #define GITLEDGER_LIBGITLEDGER_VERSION_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -8,9 +10,9 @@ extern "C"
 
     typedef struct gitledger_semantic_version
     {
-        int major;
-        int minor;
-        int patch;
+        uint32_t major;
+        uint32_t minor;
+        uint32_t patch;
     } gitledger_semantic_version_t;
 
     gitledger_semantic_version_t gitledger_semantic_version(void);
