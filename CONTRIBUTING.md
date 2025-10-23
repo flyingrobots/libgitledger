@@ -16,8 +16,8 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
   These jobs copy the repo into isolated workspaces, prepare sandbox Git
   fixtures, and remove all remotes before mutating anything.
 - If you must run against the host checkout, export `I_KNOW_WHAT_I_AM_DOING=1`
-  and call the desired target. The plain make targets will refuse to run on the
-  host without that acknowledgement.
+  and call the desired target. The makefile will otherwise abort host targets
+  unless it detects the container guard.
 - Align tooling: warning flags, optional dependencies, and targets must stay consistent across CMake and Meson.
 - When adding dependencies, update both build descriptions and mention the change in the relevant issue.
 - Run `make lint` (containerised clang-format + clang-tidy) before submitting a

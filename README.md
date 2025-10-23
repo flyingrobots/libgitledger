@@ -53,8 +53,8 @@ I_KNOW_WHAT_I_AM_DOING=1 make test-both
 ```
 
 You can still invoke the underlying host targets directly (`make host-cmake`,
-`make host-test-meson`, etc.), but doing so without the acknowledgement flag is
-strongly discouraged.
+`make host-test-meson`, etc.), but they now abort unless you exported the
+acknowledgement flag or are already inside the container environment.
 
 ### Clean / format helpers
 
