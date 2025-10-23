@@ -8,8 +8,38 @@ if [[ -z "${DEST_ROOT}" ]]; then
     exit 1
 fi
 
-if ! DEST_ROOT="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' -- "${DEST_ROOT}")"; then
-    echo "Error: unable to resolve destination root" >&2
+resolve_dest_root() {
+    local input_path="${1}"
+    local resolved=""
+
+    if command -v python3 >/dev/null 2>&1; then
+        resolved="$(python3 - "$input_path" <<'PY'
+import os
+import sys
+
+target = sys.argv[1]
+try:
+    print(os.path.abspath(target))
+except Exception as exc:
+    sys.stderr.write(f"python3 failed to resolve path: {exc}\n")
+    sys.exit(1)
+PY
+)" || return 1
+    elif command -v realpath >/dev/null 2>&1; then
+        resolved="$(realpath "${input_path}")" || return 1
+    elif command -v readlink >/dev/null 2>&1; then
+        resolved="$(readlink -f "${input_path}")" || return 1
+    else
+        resolved="$(cd "${input_path}" 2>/dev/null && pwd -P)" || {
+            echo "Error: unable to resolve destination root without python3, realpath, or readlink -f" >&2
+            return 1
+        }
+    fi
+
+    printf '%s\n' "${resolved}"
+}
+
+if ! DEST_ROOT="$(resolve_dest_root "${DEST_ROOT}")"; then
     exit 1
 fi
 
