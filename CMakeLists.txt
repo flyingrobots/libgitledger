@@ -7,7 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
-    set(PROJECT_WARNING_FLAGS /W4 /WX)
+    set(PROJECT_WARNING_FLAGS /W4 /WX /we4244 /we4267 /we4456 /we4457 /we4458 /we4459)
 else()
     # Keep Unix builds strict and hide unintended symbol exports.
     set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -fvisibility=hidden)

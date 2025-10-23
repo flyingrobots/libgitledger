@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "timestamp",
+        "branches",
+        "activity",
+        "prs"
+      ],
+      "properties": {
+        "timestamp": {
+          "type": "string"
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "activity": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^https?://"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "who",
+        "what",
+        "where",
+        "when",
+        "why",
+        "how",
+        "protip"
+      ],
+      "properties": {
+        "who": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "where": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "when": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
+        },
+        "why": {
+          "type": "string"
+        },
+        "how": {
+          "type": "string"
+        },
+        "protip": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+for cmd in git; do
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+        echo "Error: required command not installed: ${cmd}" >&2
+        exit 1
+    fi
+done
+
 DEST_ROOT="${1:-}"
 
 if [[ -z "${DEST_ROOT}" ]]; then

@@ -5,10 +5,24 @@ tidy_bin="${1:-clang-tidy}"
 build_dir="${BUILD_DIR:-build-tidy}"
 require_build="${CLANG_TIDY_REQUIRE_BUILD:-0}"
 
+if ! command -v cmake >/dev/null 2>&1; then
+  echo "clang-tidy: cmake is required" >&2
+  exit 1
+fi
+
+if ! command -v "${tidy_bin}" >/dev/null 2>&1; then
+  echo "clang-tidy: required binary '${tidy_bin}' not found" >&2
+  exit 1
+fi
+
 cmake -S . -B "${build_dir}" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 compile_db="${build_dir}/compile_commands.json"
 should_build=0
+filtered_dir="${build_dir}-filtered"
+filtered_db="${filtered_dir}/compile_commands.json"
+rm -f "${filtered_db}"
+mkdir -p "${filtered_dir}"
 
 if [[ ! -f "${compile_db}" ]]; then
   echo "clang-tidy: compile_commands.json missing after configure; building targets" >&2
@@ -37,13 +51,14 @@ allowed_roots_raw="${CLANG_TIDY_ALLOWED_ROOTS:-src:libgitledger}"
 
 while IFS= read -r line; do
   filtered_sources+=("${line}")
-done < <(python3 - "$build_dir" "$allowed_roots_raw" <<'PY'
+done < <(python3 - "$build_dir" "$allowed_roots_raw" "$filtered_db" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 build_dir = Path(sys.argv[1])
 allowed_roots = {part for part in sys.argv[2].split(':') if part}
+filtered_db_path = Path(sys.argv[3])
 db_path = build_dir / "compile_commands.json"
 data = json.loads(db_path.read_text())
 repo_root = Path.cwd().resolve()
@@ -70,11 +85,16 @@ for entry in data:
         filtered.append(entry)
         sources.append(str(rel))
 
-db_path.write_text(json.dumps(filtered, indent=2))
+filtered_db_path.write_text(json.dumps(filtered, indent=2))
 
 print("\n".join(sorted(set(sources))))
 PY
 )
+
+if [[ ! -f "${filtered_db}" ]]; then
+  echo "clang-tidy: filtered compile_commands.json not written to ${filtered_db}" >&2
+  exit 1
+fi
 
 if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   echo "clang-tidy: no eligible C sources after filtering" >&2
@@ -98,5 +118,5 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 for source in "${filtered_sources[@]}"; do
-  "${tidy_bin}" --quiet -p "${build_dir}" "${source}"
+  "${tidy_bin}" --quiet -p "${filtered_dir}" "${source}"
 done

@@ -15,8 +15,6 @@ HeaderFilterRegex: '^(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
-  - key: readability-identifier-naming.TypedefSuffix
-    value: '_t'
   - key: readability-identifier-naming.StructCase
     value: lower_case
   - key: readability-identifier-naming.UnionCase
@@ -79,7 +77,5 @@ CheckOptions:
     value: 'false'
   - key: performance-no-automatic-move.AllowedTypes
     value: ''
-  - key: portability-restrict-system-includes.Includes
-    value: '*'
   - key: misc-misplaced-const.CheckPrimitiveCasts
     value: 'true'

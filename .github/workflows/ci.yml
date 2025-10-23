@@ -75,6 +75,9 @@ jobs:
         # tools/lint/run_clang_tidy.sh filters compile_commands.json to exclude test TU entries
         run: make tidy
 
+      - name: Validate activity log schema
+        run: tools/lint/validate_activity_log.sh
+
   windows-msvc:
     name: MSVC (Windows)
     runs-on: windows-latest

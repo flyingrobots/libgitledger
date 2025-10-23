@@ -1,6 +1,7 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
-        host-format-check host-tidy host-lint container-format-check container-tidy container-lint
+        host-format-check host-tidy host-lint container-format-check container-tidy container-lint \
+        activity-validate
 
 all: both
 
@@ -124,12 +125,10 @@ tidy-build:
 	tools/lint/run_clang_tidy.sh $(CLANG_TIDY)
 
 markdownlint:
-	@files="$(shell git ls-files '*.md')"; \
-	if [ -z "$$files" ]; then \
-		echo "markdownlint: no markdown files found"; \
-	else \
-		$(MARKDOWNLINT) $(MARKDOWNLINT_ARGS) $$files; \
-	fi
+	@files="$(shell git ls-files '*.md')"; if [ -z "$$files" ]; then echo "markdownlint: no markdown files found"; else $(MARKDOWNLINT) $(MARKDOWNLINT_ARGS) $$files; fi
+
+activity-validate:
+	./tools/lint/validate_activity_log.sh
 
 clean:
 	rm -rf build build-debug build-release build-tidy meson-debug meson-release meson-* compile_commands.json

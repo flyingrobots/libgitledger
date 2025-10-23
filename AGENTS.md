@@ -56,10 +56,16 @@ ACTIVITY.log.jsonl
 
 Each line is a JSON object. No merging. No overwriting. No sorting. No reordering. End it with a `\n`.
 
-***APPEND*** to this file, for example:
+***APPEND*** to this file. Use the helper to keep the schema compliant:
 
 ```bash
-echo "<message>" >> ACTIVITY.log.jsonl
+tools/log_activity.py \
+  --who AGENT \
+  --what "Describe the work" \
+  --where path/to/file \
+  --why "Explain the reason" \
+  --how "Explain the process" \
+  --protip "Share something useful"
 ```
 
 Some of you may choke on that, since I know, it's hard to escape quotes and write JSON to the command line. But you'll get the hang of it.
@@ -69,7 +75,7 @@ Required keys:
 - `who` (your name, AGENT)
 - `what` (did you do?)
 - `where` (files, etc)
-- `when` (timestamp POSIX)
+- `when` (timestamp RFC 3339 – the helper writes this for you)
 - `why` (and if you leave this out, may God have mercy on your stack trace)
 - `how` (discuss your work)
 - `protip` (leave some wisdom for the next AGENT who reads this file)
