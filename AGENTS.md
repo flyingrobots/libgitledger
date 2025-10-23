@@ -68,6 +68,8 @@ WHERE="path/to/file another/file" \
 make log
 ```
 
+Need spaces in a path? Either set `WHERE__0="docs/path with spaces.md"` (add `WHERE__1`, etc. for more) or export `WHERE_JSON='["path with spaces.md", "other.md"]'`. Newlines inside `WHERE` also split entries while preserving spaces.
+
 That target funnels through `tools/log_activity_dispatch.sh`; stray from it and you own the schema fallout.
 
 Optional: set `WHEN=2025-10-23T21:13:08Z` if you need to override the timestamp (defaults to now).
@@ -110,7 +112,7 @@ And yeah, there's a matrix of compilers and platforms that CI/CD builds. Your co
 If your code passes but makes me squint, it still sucks.
 
 - No `strcpy`. Use `memcpy`, or better yet, don’t.
-- No `malloc()` without `sizeof(*ptr)`. _I will hunt you._
+- No `malloc()` without `sizeof(*ptr)`. *I will hunt you.*
 - Comments must explain WHY, not WHAT. We already have `git diff`.
 
 You aren't here to impress someone, you're here to write C code. This isn't your pet, it's a library. Write it right.
@@ -220,6 +222,6 @@ Alright, well, I've said what needed to be said. Now, go read `ACTIVITY.log.json
 
 Write code that would make me nod in approval. Don't make me revert your next commit with `git reset HEAD~you`.
 
-_Linus_
+*Linus*
 
 P.S. Tux says hello.
