@@ -18,71 +18,49 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
 ## Building
 
-Why do we have two build systems? Well... It's a long story.
-
-### CMake (Debug and Release)
-
-```
-cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build-debug
-ctest --test-dir build-debug
-
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release
-ctest --test-dir build-release
-```
-
-### Meson (Debug and Release)
-
-```
-meson setup meson-debug --buildtype debugoptimized
-meson compile -C meson-debug
-meson test -C meson-debug
-
-meson setup meson-release --buildtype release
-meson compile -C meson-release
-meson test -C meson-release
-```
-
-### Convenience Targets
-
-Use the provided `Makefile` shortcuts:
-
-#### Build
+Running the build or tests directly against your working tree is dangerous: our
+integration tests intentionally mutate Git repositories and can trash your
+checkout if misused. To keep everyone safe we execute the entire CI matrix in
+Docker by default.
 
 ```bash
-make cmake        # configure + build CMake debug and release
-make meson        # configure + build Meson debug and release
-make both         # run both cmake + meson builds
+make cmake        # containerised CMake builds (Debug + Release)
+make meson        # containerised Meson builds (debugoptimized + release)
+make both         # run both build systems in containers
+make test-cmake   # containerised CTest runs for both build types
+make test-meson   # containerised Meson test suite
+make test-both    # execute every CI job just like GitHub Actions
+make format-check # verify clang-format inside the matrix
+make tidy         # clang-tidy inside the matrix (only on the GCC job)
+make lint         # format-check + tidy inside the matrix
 ```
 
-#### Test
+Under the hood these targets spin up per-matrix containers (GCC 14 + Clang 18)
+and run the same make targets that CI executes, copying the repository into an
+ephemeral workspace and stripping all Git remotes. Each container also boots a
+fresh sandbox repository you can reach via the
+`LIBGITLEDGER_SANDBOX_ROOT` environment variable during tests.
+
+### Running on the host (dangerous)
+
+If you really need to run against the host checkout, acknowledge the risk by
+setting `I_KNOW_WHAT_I_AM_DOING=1`. The make targets will then delegate to the
+`host-*` equivalents.
 
 ```bash
-make test-cmake   # run ctest for debug/release builds
-make test-meson   # run meson test for debug/release builds
-make test-both    # execute all tests
+I_KNOW_WHAT_I_AM_DOING=1 make cmake
+I_KNOW_WHAT_I_AM_DOING=1 make test-both
 ```
 
-#### Clean
+You can still invoke the underlying host targets directly (`make host-cmake`,
+`make host-test-meson`, etc.), but doing so without the acknowledgement flag is
+strongly discouraged.
+
+### Clean / format helpers
 
 ```bash
 make clean        # remove build directories and artefacts
-```
-
-#### Format
-
-```
-```bash
-make format       # apply clang-format in-place
-make format-check # verify clang-format compliance
-```
-
-#### Lint
-
-```bash
-make tidy         # run clang-tidy with project configuration
-make lint         # run both format-check and tidy
+make format       # apply clang-format in-place (runs on the host)
 ```
 
 ## Coding Standards
