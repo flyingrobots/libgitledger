@@ -50,7 +50,7 @@
 
 ## M1 — Core Types, Errors, Allocator, Logger (1–2 days)
 
-### Deliverables
+### Deliverables — M1
 
 - `gitledger.h` with error codes
 - context/ledger handles
@@ -77,7 +77,7 @@
 - [ ] `gitledger_init`/`shutdown` with allocator/logger defaults.
 - [ ] Create header and source files; wire up both CMake and Meson; compile; run unit tests under each toolchain configuration.
 
-#### Tests
+#### Tests — Tasks
 
 - [ ] **Unit**: constructing/destructing context, error formatting, logger calls.
 
@@ -85,7 +85,7 @@
 
 ## M2 — Git Port + Minimal Append & Read (3–4 days)
 
-### Deliverables
+### Deliverables — M2
 
 - Ports defined
 - `libgit2` adapter
@@ -94,7 +94,7 @@
 - `get_latest`
 - get message.
 
-### Tasks
+### Tasks — M2
 
 #### 1. Define git_repo_port
 
@@ -121,7 +121,7 @@
 - Create core/ports/`git_repo_port.h`; write minimal adapter; unit‑test adapter with temp repos.
 - Wire `gitledger_append` flow (domain “commit plan” is trivial in this milestone).
 
-#### Tests
+#### Tests — Tasks
 
 - **Unit**: mock port ensures append calls sequence correctly (plan → write).
 - **Integration**: create temp repo; open ledger; append 2 entries; verify chain & messages; simulate concurrent writer to trigger conflict path (should fail with `GL_ERR_CONFLICT`).
@@ -132,11 +132,11 @@ This mirrors git‑mind’s “plan → execute via port” orchestration. ￼
 
 ## M3 — Policy (require_signed, allowed_authors) (3 days)
 
-### Deliverables
+### Deliverables — M3
 
 - Policy JSON load/store; enforcement in append().
 
-### Tasks
+### Tasks — M3
 
 #### 1. Policy format & schema
 
@@ -154,7 +154,7 @@ This mirrors git‑mind’s “plan → execute via port” orchestration. ￼
 - Choose lightweight JSON (e.g., `yyjson` vendor); implement strict parse; validate fields.
 - Unit test parse + invalid cases; enforce paths with fake ports.
 
-#### Tests
+#### Tests — Tasks
 
 - Policy set/get round‑trip; append blocked for unknown author; append allowed for allow-list; `require_signed` toggles behavior (temporarily accept but mark `GL_ERR_NOSIG` if signature missing to be finalized in M4).
 
@@ -162,11 +162,11 @@ Grounded by shiplog’s policy‑as‑code. ￼
 
 ## M4 — Trust & Signatures (chain + attestation) (5–7 days)
 
-### Deliverables
+### Deliverables — M4
 
 - Trust JSON, signature extraction, verification adapters, hard enforcement.
 
-### Tasks
+### Tasks — M4
 
 #### 1. Trust format
 
@@ -203,11 +203,11 @@ Modeled on shiplog trust model. ￼
 
 ## M5 — Notes & Tag Association (2–3 days)
 
-### Deliverables
+### Deliverables — M5
 
 - `attach_note()`, tag ↔ entry associations via notes on tag objects.
 
-### Tasks
+### Tasks — M5
 
 #### 1. Notes
 
@@ -220,7 +220,7 @@ Modeled on shiplog trust model. ￼
 - Implement reverse lookup `gitledger_tag_get_associated_entries()` in later polish.
 - Add helper to look up tag objects; write note create/read; include tests.
 
-### Tests
+### Tests — M5
 
 - **Integration**: create tag; append entry; associate; read back association; multiple associations handled.
 
@@ -228,11 +228,11 @@ Modeled on shiplog trust model. ￼
 
 ## M6 — Indexer + Roaring Cache + Query API (5–7 days)
 
-### Deliverables
+### Deliverables — M6
 
 - Indexer callback; cache build; boolean term queries.
 
-### Tasks
+### Tasks — M6
 
 #### 1. Indexer adapter
 
@@ -253,7 +253,7 @@ Modeled on shiplog trust model. ￼
 - Vendor `CRoaring`; write serializers; implement rebuild command; add CLI git-ledger query.
 - Use memory‑mapped files in temp during build to avoid RAM blowup; write back atomically to cache ref.
 
-### Tests
+### Tests — M6
 
 - **Unit**: add/remove ordinals; serialize/deserialize; boolean algebra correctness.
 - **Integration**: build cache; query known terms; mutate journal → rebuild → query results reflect changes.
@@ -262,11 +262,11 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 
 ## M7 — Integrity, Self‑Audit, Hardening (2–3 days)
 
-### Deliverables
+### Deliverables — M7
 
 - Deep audit tool, `BLAKE3` ref checksums (optional), docs, examples.
 
-### Tasks
+### Tasks — M7
 
 #### 1. Audit
 
@@ -280,7 +280,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 
 - **Ship sample encoders**: shiplog‑style (header + JSON trailer) and git‑mind‑style (base64‑CBOR) to demonstrate both worlds.
 
-### Tests
+### Tests — M7
 
 - Corrupt commit message → detect.
 - Rewritten ref → fail audit.
@@ -328,7 +328,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 3. Parse on `append()`; enforce `allowed_authors` and max size.
 4. Add environment/identity port (get author email).
 
-### Tests
+### Tests — B) Policy enforcement (M3)
 
 - Set `allowed_authors` to `[ "me@example.com" ]`; attempt with other author → `GL_ERR_POLICY`.
 - **Missing policy**: default to permissive or deny per config (test both).
@@ -346,7 +346,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
   - Write/read signature note and verify via adapter.
 5. Enforce `require_signed` at `append()` (hard fail if invalid).
 
-### Tests
+### Tests — C) Trust + signature (M4)
 
 - **Trust threshold**: attempt to update trust.json without N‑of‑M cosign → rejected.
 - Append signed entry with allowed signer → OK; same with unlisted signer → `GL_ERR_TRUST`.
@@ -358,7 +358,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
    - Resolve tag object (`git_tag_lookup`); add note under `refs/gitledger/tag_notes` with payload: `entry_oid=<sha>` (and JSON metadata optionally).
 3. Provide helper to list associations (stretch).
 
-### Tests
+### Tests — D) Notes + Tags (M5)
 
 - Attach note; read it; binary content round‑trips.
 - **Tag association**: read note from tag object; verify entry OID.
@@ -374,7 +374,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 4. `query_terms`:
    - Load cache; for each term, get bitmap; compute boolean ops; translate ordinals → OIDs.
 
-### Tests
+### Tests — E) Indexer & cache (M6)
 
 - Fake indexer that emits: `service:api` for 1st & 3rd; query returns those two OIDs.
 - Negative term (`-status:fail`) excludes failing entries.
@@ -386,7 +386,7 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 2. Optional `BLAKE3` checksum:
    - Compute on head OID + refs (policy/trust/cache heads) → store note on `journal/<L>` tip; verify on open. ￼
 
-### Tests
+### Tests — F) Integrity & self‑audit (M7)
 
 - Manually corrupt note payload → verify fails.
 - Rewrite ref (simulate malicious) → audit detects non‑fast‑forward.
@@ -518,7 +518,7 @@ Minimal CLI to prove library flows:
 - **Server‑side recipe**: Ship a pre‑receive example hook that rejects non‑FF and policy violations (documented, not enforced by the lib). ￼
 - **Tamper detection**: Deep verify should flag gaps, non‑linear parents, or tip rewinds since last audit; offer a “last‑known‑good” watermark.
 
-#### Tests
+#### Tests — 2) Distributed append‑only (you don’t control the internet)
 
 - Simulate a remote force‑push (move the ref backwards) and confirm audit fails loudly; confirm hook script would have blocked it.
 
@@ -526,13 +526,13 @@ Minimal CLI to prove library flows:
 
 **Why hard**: git‑mind’s cache uses ordinals (entry #0, #1, …) as bitmap positions. That’s blazing fast—but only if ordinals are stable and consistent across rebuilds and clones. Conflicts, partial clones, or history repair can desync mapping. ￼
 
-#### Mitigations
+#### Mitigations — 3) Ordinals & the Roaring cache
 
 - **Canonical ordinal**: Ordinal = position by parent chain from the ledger root, not by timestamp. Recompute deterministically on rebuild. ￼
 - **Cache is rebuildable**: Treat cache as derivative under `refs/gitledger/cache/<L>`; never source of truth. If mismatch → rebuild. ￼
 - **Atomic publish**: Write new cache snapshot as a blob/commit and fast‑forward cache ref in one transaction.
 
-#### Tests
+#### Tests — 3) Ordinals & the Roaring cache
 
 - Inject out‑of‑order timestamps; confirm ordinals identical after rebuild.
 - Corrupt cache; verify query falls back or forces rebuild and returns correct results.
@@ -541,13 +541,13 @@ Minimal CLI to prove library flows:
 
 **Why hard**: Notes attach to object IDs. Lightweight vs annotated tags differ; moving a tag creates a new object, leaving the old note behind. Association semantics must be explicit. ￼
 
-#### Mitigations
+#### Mitigations — 4) Notes & tag association correctness
 
 - **Annotate tag objects only**: Define API to resolve annotated tag OID; if lightweight, offer to create an annotated tag or store an association record elsewhere.
 - **Staleness policy**: If a tag moves, previous association becomes historical; provide `tag_associations(tagName, --as-of)` to show history.
 - **Cap note sizes & prefer blob links**: Store large data as blobs; note contains a small JSON with blob OIDs.
 
-#### Tests
+#### Tests — 4) Notes & tag association correctness
 
 - Convert a lightweight tag to annotated; verify association creation path.
 - Move a tag; ensure old association remains discoverable as historical.
@@ -556,13 +556,13 @@ Minimal CLI to prove library flows:
 
 **Why hard**: You want Go/JS/Python bindings. That means opaque handles, no struct layout leaks, clear ownership, and predictable threading. If you expose the wrong thing now, you’re stuck forever. ￼
 
-#### Mitigations
+#### Mitigations — 5) Stable C ABI & FFI ergonomics
 
 - Opaque types only; all allocation through `gitledger_*_new()`/`*_free()`.
 - Error objects are heap‑owned; callers must free; never return borrowed pointers that can dangle.
 - **No global state; ctx carries all configuration. Thread‑safety doc**: ledger handles not thread‑safe; reads in parallel are fine with separate handles. ￼
 
-#### Tests
+#### Tests — 5) Stable C ABI & FFI ergonomics
 
 - Valgrind/ASan in CI; fuzz decoders/indexers; run language binding smoke tests that hammer create/free cycles.
 
@@ -570,12 +570,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: shiplog wants human‑readable with trailers; git‑mind wants binary CBOR. Git will store arbitrary bytes in commit messages, but many tools assume UTF‑8. Don’t lose data; don’t break pretty logs.
 
-#### Mitigations
+#### Mitigations — 6) Encoders: bytes vs text
 
 - **Encoder contract = bytes; library never interprets encoding. Provide example encoders**: “shiplog‑style (UTF‑8+trailers)” and “git‑mind‑style (base64 CBOR)”.
 - **Size & content policy**: `max_entry_size_bytes`; forbid NUL in human‑mode; recommend base64 for binary.
 
-#### Tests
+#### Tests — 6) Encoders: bytes vs text
 
 - Round‑trip random binary payload via base64 encoder; ensure exact match.
 - Verify trailer parser ignores binary lines safely.
@@ -584,12 +584,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: If you only check policy in `append()`, remote pushes can bypass it; if you only check server‑side, local dev flows are confusing. Also: which policy applies to which commit? ￼
 
-#### Mitigations
+#### Mitigations — 7) Policy enforcement points
 
 - **Triple guard**: enforce in `append()`, re‑check in `verify_ledger_integrity()`, and provide a server hook template. ￼
 - **As‑of policy**: embed policy/trust tip OIDs used at append time in the entry trailers. Audits use those, not “latest”. ￼
 
-#### Tests
+#### Tests — 7) Policy enforcement points
 
 - Change policy to disallow an author; ensure old entries remain valid, new ones blocked; deep verify behaves.
 
@@ -597,12 +597,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: `git gc` prunes unreachable objects. Notes and cache commits must remain reachable via refs you control; otherwise you silently lose data.
 
-#### Mitigations
+#### Mitigations — 8) GC, reachability, and durability
 
 - Keep dedicated refs for notes (`refs/gitledger/notes/<L>`), cache, policy, trust, and tag notes; never leave data floating as loose objects. ￼
 - Cache is rebuildable by design; never treat it as canonical. ￼
 
-#### Tests
+#### Tests — 8) GC, reachability, and durability
 
 - Run `git gc --aggressive` on test repo; confirm notes & cache persist; purge cache ref and confirm rebuild restores query behavior.
 
@@ -610,12 +610,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: OIDs change width; signature formats differ; some repos will be dual‑mode for a while. If the public API assumes 40‑char hex forever, future you cries. ￼
 
-#### Mitigations
+#### Mitigations — 9) Hash‑algorithm transition (SHA‑1 ⇄ SHA‑256)
 
 - Binary OID API internally; hex is rendering. Accept variable‑length hex (40/64).
 - **Avoid hard‑coding “41 including NUL”; define constants from `libgit2` capabilities and expose helpers**: `gitledger_oid_to_hex()`.
 
-#### Tests
+#### Tests — 9) Hash‑algorithm transition (SHA‑1 ⇄ SHA‑256)
 
 - Compile‑time tests that `OID_HEX_MAX` isn’t assumed 41; fuzz with 20‑byte and 32‑byte synthetic OIDs.
 
@@ -623,12 +623,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: Two writers race → one must lose gracefully; the loser must detect, reload, and retry without corrupting ordinals or cache. ￼
 
-#### Mitigations
+#### Mitigations — 10)  Concurrency & ref transactions
 
 - Always update refs with expected‑old OID; map `libgit2`’s error to `GL_ERR_CONFLICT`.
 - Retry loop backoff in CLI; library stays pure and returns conflict.
 
-#### Tests
+#### Tests — 10)  Concurrency & ref transactions
 
 - Multi‑process appends; ensure exactly one winner, no dupes, cache stays consistent (or rebuilds).
 
@@ -636,12 +636,12 @@ Minimal CLI to prove library flows:
 
 `Why hard`: Logs/artifacts can be huge; notes weren’t meant to be a package registry. Shiplog does it, but you need sane limits and guidance. ￼
 
-#### Mitigations
+#### Mitigations — 11)  “Run”‑style large attachments via notes
 
 - Policy caps for note sizes; enforce in `attach_note()`.
 - **Prefer blob indirection**: write artifact as blob; note holds small JSON pointing to blob OID(s).
 
-#### Tests
+#### Tests — 11)  “Run”‑style large attachments via notes
 
 - Attach 10MB blob via indirection; ensure replication and retrieval are fast; direct huge note should be rejected per policy.
 
@@ -649,12 +649,12 @@ Minimal CLI to prove library flows:
 
 **Why hard**: `libgit2` smooths a lot, but Windows path rules/locks and macOS filesystem oddities still surface. CI must prove portability. ￼
 
-#### Mitigations
+#### Mitigations — 12)  Cross‑platform reality check
 
 - Dockerized CI matrix; run tests on Linux + macOS + Windows.
 - Avoid temp file shenanigans; use the planned `fs_temp_port` and test it hard. ￼
 
-#### Tests
+#### Tests — 12)  Cross‑platform reality check
 
 - Stress create/close cycles; concurrent readers on Windows; long‑path opt‑in.
 
