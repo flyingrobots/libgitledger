@@ -5,8 +5,7 @@
 static const gitledger_semantic_version_t METAGRAPH_VERSION_VALUE = {0, 1, 0};
 static char                               gitledger_version_buffer[16];
 
-static int
-write_decimal(unsigned int value, char **cursor, size_t *remaining)
+static int write_decimal(unsigned int value, char** cursor, size_t* remaining)
 {
     char   digits[10];
     size_t idx = 0U;
@@ -44,7 +43,7 @@ gitledger_semantic_version_t gitledger_semantic_version(void)
 
 const char* gitledger_semantic_version_string(void)
 {
-    char * cursor    = gitledger_version_buffer;
+    char*  cursor    = gitledger_version_buffer;
     size_t remaining = sizeof(gitledger_version_buffer);
 
     if (!write_decimal((unsigned int) METAGRAPH_VERSION_VALUE.major, &cursor, &remaining))
