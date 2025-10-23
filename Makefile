@@ -1,6 +1,6 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
-        host-format-check host-tidy host-lint container-format-check container-tidy container-lint \
+        host-format-check host-tidy host-lint \
         activity-validate log
 
 all: both
@@ -93,16 +93,12 @@ format:
 format-check:
 	@$(DISPATCH) format-check
 
-container-format-check: format-check
-
 host-format-check:
 	$(HOST_GUARD)
 	tools/lint/clang_format_check.sh $(CLANG_FORMAT)
 
 lint:
 	@$(DISPATCH) lint
-
-container-lint: lint
 
 host-lint:
 	$(HOST_GUARD)
@@ -111,8 +107,6 @@ host-lint:
 
 tidy:
 	@$(DISPATCH) tidy
-
-container-tidy: tidy
 
 host-tidy:
 	$(HOST_GUARD)
