@@ -1,7 +1,7 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
         host-format-check host-tidy host-lint container-format-check container-tidy container-lint \
-        activity-validate
+        activity-validate log
 
 all: both
 
@@ -129,6 +129,29 @@ markdownlint:
 
 activity-validate:
 	./tools/lint/validate_activity_log.sh
+
+log:
+	@{ \
+		if [ -z "$$WHO" ] || [ -z "$$WHAT" ] || [ -z "$$WHY" ] || [ -z "$$HOW" ] || [ -z "$$PROTIP" ]; then \
+			echo "Usage: WHO=… WHAT=… WHY=… HOW=… PROTIP=… [WHERE='file1 file2'] [WHEN='2025-10-23T00:00:00Z'] make log" >&2; \
+			exit 1; \
+		fi; \
+		set --; \
+		if [ -n "$$WHERE" ]; then \
+			for path in $$WHERE; do \
+				set -- "$$@" --where "$$path"; \
+			done; \
+		fi; \
+		if [ -n "$$WHEN" ]; then \
+			set -- "$$@" --when "$$WHEN"; \
+		fi; \
+		tools/log_activity.py \
+			--who "$$WHO" \
+			--what "$$WHAT" \
+			--why "$$WHY" \
+			--how "$$HOW" \
+			--protip "$$PROTIP" "$$@"; \
+	}
 
 clean:
 	rm -rf build build-debug build-release build-tidy meson-debug meson-release meson-* compile_commands.json

@@ -56,17 +56,20 @@ ACTIVITY.log.jsonl
 
 Each line is a JSON object. No merging. No overwriting. No sorting. No reordering. End it with a `\n`.
 
-***APPEND*** to this file. Use the helper to keep the schema compliant:
+***APPEND*** to this file. Use the `make log` helper so the schema stays clean:
 
 ```bash
-tools/log_activity.py \
-  --who AGENT \
-  --what "Describe the work" \
-  --where path/to/file \
-  --why "Explain the reason" \
-  --how "Explain the process" \
-  --protip "Share something useful"
+WHO=AGENT \
+WHAT="Describe the work" \
+WHY="Explain the reason" \
+HOW="Explain the process" \
+PROTIP="Share something useful" \
+WHERE="path/to/file another/file" \
+make log
 ```
+
+Optional: set `WHEN=2025-10-23T21:13:08Z` if you need to override the timestamp (defaults to now).
+After logging, run `make activity-validate` before you commit.
 
 Some of you may choke on that, since I know, it's hard to escape quotes and write JSON to the command line. But you'll get the hang of it.
 
