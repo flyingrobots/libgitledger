@@ -16,6 +16,7 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 - Align tooling: warning flags, optional dependencies, and targets must stay consistent across CMake and Meson.
 - When adding dependencies, update both build descriptions and mention the change in the relevant issue.
 - Run `make lint` (containerised clang-format + clang-tidy) before submitting a PR. CI enforces the same suite on GCC, Clang, and MSVC.
+- Need to bypass clang-tidy for a quick repro? Run `RUN_TIDY=0 make host-tidy` locally, but flip it back to 1 before shipping anything.
 
 ## Pull Requests
 

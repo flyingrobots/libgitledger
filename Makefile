@@ -108,6 +108,7 @@ host-lint:
 tidy:
 	@$(DISPATCH) tidy
 
+# RUN_TIDY defaults to 1; set RUN_TIDY=0 make host-tidy when you need to bypass clang-tidy locally.
 host-tidy:
 	$(HOST_GUARD)
 	@if [ "${RUN_TIDY:-1}" = "0" ]; then \
