@@ -50,14 +50,15 @@ if ! DEST_ROOT="$(resolve_dest_root "${DEST_ROOT}")"; then
     exit 1
 fi
 
+# Reject only top-level system directories; subdirectories like /tmp/gitledger-fixtures remain allowed.
 case "${DEST_ROOT}" in
-    /|/bin|/usr|/home|/etc|/var|/tmp|/sys|/proc|/dev|/opt|/sbin)
+    /|/bin|/usr|/home|/etc|/var|/sys|/proc|/dev|/opt|/sbin)
         echo "Error: DEST_ROOT cannot be a system directory: ${DEST_ROOT}" >&2
         exit 1
         ;;
 esac
 
-if [[ "${DEST_ROOT}" == "${HOME}" ]] || [[ "${DEST_ROOT}" == "$(pwd)" ]]; then
+if [[ "${DEST_ROOT}" == "${HOME}" ]] || [[ "${DEST_ROOT}" == "$(pwd)" ]] || [[ "${DEST_ROOT}" == "/tmp" ]]; then
     echo "Error: refusing to operate on critical path: ${DEST_ROOT}" >&2
     exit 1
 fi
