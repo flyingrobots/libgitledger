@@ -29,6 +29,7 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
+      LIBGITLEDGER_CONTAINER_IMAGE: libgitledger-ci:latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,6 +55,13 @@ jobs:
 
       - name: Pre-build CI container image
         run: docker build -t libgitledger-ci:latest -f tools/container/Dockerfile .
+
+      - name: Verify make targets exist
+        # The container dispatch script expects these orchestrated targets; a dry run proves they resolve.
+        run: |
+          for target in cmake test-cmake meson test-meson format-check tidy; do
+            make -n "$target" >/dev/null
+          done
 
       - name: Build with CMake
         run: make cmake
