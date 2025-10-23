@@ -50,6 +50,6 @@ for entry in "${tmp_dir}"/*.json; do
     data_args+=(-d "${entry}")
 done
 
-npx --yes ajv-cli@5.0.0 validate --spec=draft7 --unknown-formats ignore -s "${schema_file}" "${data_args[@]}" >/dev/null
+npx --yes ajv-cli@5.0.0 validate --spec=draft7 --strict=false -s "${schema_file}" "${data_args[@]}" >/dev/null
 
 echo "activity-log: validation passed"
