@@ -68,6 +68,8 @@ WHERE="path/to/file another/file" \
 make log
 ```
 
+That target funnels through `tools/log_activity_dispatch.sh`; stray from it and you own the schema fallout.
+
 Optional: set `WHEN=2025-10-23T21:13:08Z` if you need to override the timestamp (defaults to now).
 After logging, run `make activity-validate` before you commit.
 
