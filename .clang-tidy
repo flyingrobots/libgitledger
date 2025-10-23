@@ -67,12 +67,6 @@ CheckOptions:
     value: 'false'
   - key: performance-no-automatic-move.AllowedTypes
     value: ''
-  - key: modernize-replace-auto-ptr.IncludeStyle
-    value: google
-  - key: modernize-use-auto.MinTypeNameLength
-    value: '5'
-  - key: modernize-use-auto.RemoveStars
-    value: 'false'
   - key: portability-restrict-system-includes.Includes
     value: '*'
   - key: misc-misplaced-const.CheckPrimitiveCasts
