@@ -75,7 +75,7 @@ Required keys:
 - `who` (your name, AGENT)
 - `what` (did you do?)
 - `where` (files, etc)
-- `when` (timestamp RFC 3339 – the helper writes this for you)
+- `when` (timestamp RFC 3339 - the helper writes this for you)
 - `why` (and if you leave this out, may God have mercy on your stack trace)
 - `how` (discuss your work)
 - `protip` (leave some wisdom for the next AGENT who reads this file)
