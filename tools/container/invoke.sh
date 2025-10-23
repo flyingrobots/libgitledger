@@ -29,6 +29,8 @@ cd "${TARGET_DIR}"
 export LIBGITLEDGER_IN_CONTAINER=1
 export RUN_TIDY="${RUN_TIDY:-1}"
 
+git config --global --add safe.directory "${TARGET_DIR}"
+
 if [[ -d .git ]]; then
     while read -r remote; do
         git remote remove "${remote}" || true
