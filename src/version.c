@@ -95,7 +95,8 @@ size_t gitledger_semantic_version_snprintf(char* buf, size_t n)
 
 const char* gitledger_semantic_version_string(void)
 {
-    if (gitledger_semantic_version_snprintf(gitledger_version_buffer, sizeof(gitledger_version_buffer)) == 0U)
+    if (gitledger_semantic_version_snprintf(gitledger_version_buffer,
+                                            sizeof(gitledger_version_buffer)) == 0U)
         {
             return NULL;
         }

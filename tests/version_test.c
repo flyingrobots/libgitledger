@@ -9,7 +9,7 @@ int main(void)
 {
     gitledger_semantic_version_t const version = gitledger_semantic_version();
 
-    char buffer[64];
+    char         buffer[64];
     size_t const written = gitledger_semantic_version_snprintf(buffer, sizeof buffer);
     if (written != strlen("0.1.0"))
         {
