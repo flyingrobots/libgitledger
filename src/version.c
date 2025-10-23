@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-static const gitledger_semantic_version_t METAGRAPH_VERSION_VALUE = {0, 1, 0};
+static const gitledger_semantic_version_t GITLEDGER_VERSION_VALUE = {0, 1, 0};
 static char                               gitledger_version_buffer[16];
 
 static int write_decimal(unsigned int value, char** cursor, size_t* remaining)
@@ -38,7 +38,7 @@ static int write_decimal(unsigned int value, char** cursor, size_t* remaining)
 
 gitledger_semantic_version_t gitledger_semantic_version(void)
 {
-    return METAGRAPH_VERSION_VALUE;
+    return GITLEDGER_VERSION_VALUE;
 }
 
 const char* gitledger_semantic_version_string(void)
@@ -46,7 +46,7 @@ const char* gitledger_semantic_version_string(void)
     char*  cursor    = gitledger_version_buffer;
     size_t remaining = sizeof(gitledger_version_buffer);
 
-    if (!write_decimal((unsigned int) METAGRAPH_VERSION_VALUE.major, &cursor, &remaining))
+    if (!write_decimal((unsigned int) GITLEDGER_VERSION_VALUE.major, &cursor, &remaining))
         {
             return "";
         }
@@ -59,7 +59,7 @@ const char* gitledger_semantic_version_string(void)
     *cursor++ = '.';
     remaining--;
 
-    if (!write_decimal((unsigned int) METAGRAPH_VERSION_VALUE.minor, &cursor, &remaining))
+    if (!write_decimal((unsigned int) GITLEDGER_VERSION_VALUE.minor, &cursor, &remaining))
         {
             return "";
         }
@@ -72,7 +72,7 @@ const char* gitledger_semantic_version_string(void)
     *cursor++ = '.';
     remaining--;
 
-    if (!write_decimal((unsigned int) METAGRAPH_VERSION_VALUE.patch, &cursor, &remaining))
+    if (!write_decimal((unsigned int) GITLEDGER_VERSION_VALUE.patch, &cursor, &remaining))
         {
             return "";
         }
