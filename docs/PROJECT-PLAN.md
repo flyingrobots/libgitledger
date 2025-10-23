@@ -337,13 +337,13 @@ Pattern borrowed from git‑mind’s roaring cache. ￼
 
 1. Implement `gitledger_trust_get`/`set` the same way as policy (dedicated ref). ￼
 2. Add `signing_port`:
-  - `extract_commit_sig(oid, &algo, &signer_fpr)`.
-  - `verify_commit_sig(oid, expected_fpr)` → bool.
-  - `verify_detached_sig(oid, sig_blob)` → bool.
+   - `extract_commit_sig(oid, &algo, &signer_fpr)`.
+   - `verify_commit_sig(oid, expected_fpr)` → bool.
+   - `verify_detached_sig(oid, sig_blob)` → bool.
 3. For chain mode:
-  - Use `libgit2` to extract signature fields; check that signer fingerprint ∈ `allowed_signers`.
+   - Use `libgit2` to extract signature fields; check that signer fingerprint ∈ `allowed_signers`.
 4. For attestation mode:
-  - Write/read signature note and verify via adapter.
+   - Write/read signature note and verify via adapter.
 5. Enforce `require_signed` at `append()` (hard fail if invalid).
 
 ### Tests — C) Trust + signature (M4)
@@ -495,17 +495,27 @@ Minimal CLI to prove library flows:
 
 ### 1) Signatures, Trust, and “as‑of” semantics
 
-**Why hard**: Shiplog’s model is powerful (N‑of‑M, chain/attestation), but correctness hinges on as‑of verification: an entry is valid if it met the policy+trust in force when it was written, not what’s current today. Add key rotation, expiry, revocation, and detached attestations and you’ve got a swamp. ￼
+**Why hard**: Shiplog’s model is powerful (N‑of‑M, chain/attestation), but
+correctness hinges on as‑of verification: an entry is valid if it met the
+policy+trust in force when it was written, not what’s current today. Add key
+rotation, expiry, revocation, and detached attestations and you’ve got a swamp. ￼
 
 #### Decisions to bake in now
 
-- **Snapshot evaluation**: `verify_ledger_integrity(deep=1)` must evaluate each entry against the policy/trust at that commit’s point in history. Store policy/trust on dedicated refs, but embed the OID of the policy/trust tips used at append time in the entry’s trailers to anchor verification. ￼
-- **Two modes, one contract**: Support chain (commit signatures) and attestation (detached; note‑stored) behind a single `signing_port` so backends (GPGME/SSHsig) can vary. ￼
-- **Threshold edits to trust**: Updates to trust.json require N‑of‑M maintainer cosignatures, enforced in `gitledger_trust_set()`. ￼
+- **Snapshot evaluation**: `verify_ledger_integrity(deep=1)` must evaluate each
+  entry against the policy/trust at that commit’s point in history. Store
+  policy/trust on dedicated refs, but embed the OID of the policy/trust tips
+  used at append time in the entry’s trailers to anchor verification. ￼
+- **Two modes, one contract**: Support chain (commit signatures) and
+  attestation (detached; note‑stored) behind a single `signing_port` so backends
+  (GPGME/SSHsig) can vary. ￼
+- **Threshold edits to trust**: Updates to trust.json require N‑of‑M maintainer
+  cosignatures, enforced in `gitledger_trust_set()`. ￼
 
 #### Tests that catch regressions
 
-- Historical trust change invalidates future entries correctly but not past ones; deep verify must pass pre‑change entries and fail post‑change violators.
+- Historical trust change invalidates future entries correctly but not past ones;
+  deep verify must pass pre‑change entries and fail post‑change violators.
 - Rotate a signer key; ensure mapping by fingerprint not email; revocation respected only from revocation time forward.
 
 ### 2) Distributed append‑only (you don’t control the internet)
@@ -524,13 +534,17 @@ Minimal CLI to prove library flows:
 
 ### 3) Ordinals & the Roaring cache
 
-**Why hard**: git‑mind’s cache uses ordinals (entry #0, #1, …) as bitmap positions. That’s blazing fast—but only if ordinals are stable and consistent across rebuilds and clones. Conflicts, partial clones, or history repair can desync mapping. ￼
+**Why hard**: git‑mind’s cache uses ordinals (entry #0, #1, …) as bitmap
+positions. That’s blazing fast—but only if ordinals are stable and consistent
+across rebuilds and clones. Conflicts, partial clones, or history repair can
+desync mapping. ￼
 
 #### Mitigations — 3) Ordinals & the Roaring cache
 
 - **Canonical ordinal**: Ordinal = position by parent chain from the ledger root, not by timestamp. Recompute deterministically on rebuild. ￼
 - **Cache is rebuildable**: Treat cache as derivative under `refs/gitledger/cache/<L>`; never source of truth. If mismatch → rebuild. ￼
-- **Atomic publish**: Write new cache snapshot as a blob/commit and fast‑forward cache ref in one transaction.
+- **Atomic publish**: Write new cache snapshot as a blob/commit and
+  fast‑forward cache ref in one transaction.
 
 #### Tests — 3) Ordinals & the Roaring cache
 
