@@ -59,9 +59,8 @@ if [[ -n "${WHERE:-}" ]]; then
             where_entries+=("${entry}")
         done < <(printf '%s' "${WHERE}" | tr -d '\r')
     else
-        for entry in ${WHERE}; do
-            where_entries+=("${entry}")
-        done
+        read -r -a parsed_where <<<"${WHERE}"
+        where_entries+=("${parsed_where[@]}")
     fi
 fi
 
