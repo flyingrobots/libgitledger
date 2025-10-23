@@ -3,11 +3,38 @@ set -euo pipefail
 
 tidy_bin="${1:-clang-tidy}"
 build_dir="${BUILD_DIR:-build-tidy}"
+require_build="${CLANG_TIDY_REQUIRE_BUILD:-0}"
 
 cmake -S . -B "${build_dir}" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build "${build_dir}"
 
-filtered_sources=$(python3 - "$build_dir" <<'PY'
+compile_db="${build_dir}/compile_commands.json"
+should_build=0
+
+if [[ ! -f "${compile_db}" ]]; then
+  echo "clang-tidy: compile_commands.json missing after configure; building targets" >&2
+  should_build=1
+fi
+
+case "${require_build}" in
+  1|true|TRUE|yes|YES)
+    should_build=1
+    ;;
+esac
+
+if (( should_build )); then
+  cmake --build "${build_dir}"
+fi
+
+if [[ ! -f "${compile_db}" ]]; then
+  echo "clang-tidy: compile_commands.json not found in ${build_dir}" >&2
+  exit 1
+fi
+
+declare -a filtered_sources=()
+
+while IFS= read -r line; do
+  filtered_sources+=("${line}")
+done < <(python3 - "$build_dir" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -42,15 +69,26 @@ print("\n".join(sorted(set(sources))))
 PY
 )
 
-if [ -z "${filtered_sources}" ]; then
+if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   echo "clang-tidy: no eligible C sources after filtering"
   exit 0
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then
-  export SDKROOT="$(xcrun --show-sdk-path)"
+  if [[ -z "${SDKROOT:-}" ]]; then
+    if sdk_path=$(xcrun --show-sdk-path 2>/dev/null); then
+      if [[ -z "${sdk_path}" ]]; then
+        echo "clang-tidy: xcrun reported an empty SDK path" >&2
+        exit 1
+      fi
+      export SDKROOT="${sdk_path}"
+    else
+      echo "clang-tidy: failed to resolve SDKROOT via xcrun" >&2
+      exit 1
+    fi
+  fi
 fi
 
-for source in ${filtered_sources}; do
+for source in "${filtered_sources[@]}"; do
   "${tidy_bin}" --quiet -p "${build_dir}" "${source}"
 done

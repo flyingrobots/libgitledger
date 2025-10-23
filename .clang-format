@@ -15,4 +15,5 @@ AlignTrailingComments: true
 SpaceAfterCStyleCast: true
 SpaceBeforeParens: ControlStatements
 IncludeBlocks: Preserve
+# Keep include sorting enabled to ensure consistent formatter output across tooling.
 SortIncludes: true
