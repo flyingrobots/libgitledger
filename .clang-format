@@ -15,4 +15,4 @@ AlignTrailingComments: true
 SpaceAfterCStyleCast: true
 SpaceBeforeParens: ControlStatements
 IncludeBlocks: Preserve
-SortIncludes: false
+SortIncludes: true
