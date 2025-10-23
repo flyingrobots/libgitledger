@@ -49,6 +49,12 @@ jobs:
           cmake --version
           meson --version
 
+      - name: Verify Docker availability
+        run: docker version
+
+      - name: Pre-build CI container image
+        run: docker build -t libgitledger-ci:latest -f tools/container/Dockerfile .
+
       - name: Build with CMake
         run: make cmake
 
