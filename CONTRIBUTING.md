@@ -12,6 +12,10 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 ## Development Expectations
 
 - Maintain both build systems. Always ensure changes compile and test cleanly via CMake (`cmake --build`, `ctest`) and Meson (`meson compile`, `meson test`).
+- Standard build commands:
+  - CMake debug: `cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug && cmake --build build-debug && ctest --test-dir build-debug`
+  - Meson debug: `meson setup meson-debug --buildtype debugoptimized && meson compile -C meson-debug && meson test -C meson-debug`
+  - Repeat with `build-release` / `meson-release` for release builds.
 - Align tooling: warning flags, optional dependencies, and targets must stay consistent across CMake and Meson.
 - When adding dependencies, update both build descriptions and mention the change in the relevant issue.
 
