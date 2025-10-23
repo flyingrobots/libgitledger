@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for cmd in git; do
-    if ! command -v "${cmd}" >/dev/null 2>&1; then
-        echo "Error: required command not installed: ${cmd}" >&2
-        exit 1
-    fi
-done
+if ! command -v git >/dev/null 2>&1; then
+    echo "Error: required command not installed: git" >&2
+    exit 1
+fi
 
 DEST_ROOT="${1:-}"
 
@@ -58,7 +56,9 @@ case "${DEST_ROOT}" in
         ;;
 esac
 
-if [[ "${DEST_ROOT}" == "${HOME}" ]] || [[ "${DEST_ROOT}" == "$(pwd)" ]] || [[ "${DEST_ROOT}" == "/tmp" ]]; then
+CUR_PWD="$(pwd)"
+
+if [[ "${DEST_ROOT}" == "${HOME}" ]] || [[ "${DEST_ROOT}" == "${CUR_PWD}" ]] || [[ "${DEST_ROOT}" == "/tmp" ]]; then
     echo "Error: refusing to operate on critical path: ${DEST_ROOT}" >&2
     exit 1
 fi
