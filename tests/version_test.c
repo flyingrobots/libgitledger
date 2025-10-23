@@ -11,7 +11,10 @@ int main(void)
 
     char buffer[64];
     size_t const written = gitledger_semantic_version_snprintf(buffer, sizeof buffer);
-    assert(written == strlen("0.1.0"));
+    if (written != strlen("0.1.0"))
+        {
+            return 1;
+        }
     assert(strcmp(buffer, "0.1.0") == 0);
 
     const char* const version_text = gitledger_semantic_version_string();
