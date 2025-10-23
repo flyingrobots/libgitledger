@@ -16,13 +16,15 @@ jobs:
         include:
           - name: GCC 14 (Ubuntu 24.04)
             os: ubuntu-24.04
-            cc: gcc
-            cxx: g++
+            cc: gcc-14
+            cxx: g++-14
+            packages: gcc-14 g++-14 clang-format-18 clang-tidy-18
             run_tidy: true
           - name: Clang 18 (Ubuntu 24.04)
             os: ubuntu-24.04
-            cc: clang
-            cxx: clang++
+            cc: clang-18
+            cxx: clang++-18
+            packages: clang-18 clang++-18 clang-format-18 clang-tidy-18
             run_tidy: false
     env:
       CC: ${{ matrix.cc }}
@@ -34,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ninja-build cmake python3-pip ${{ matrix.cc }} clang-format clang-tidy
+          sudo apt-get install -y build-essential ninja-build cmake python3-pip rsync ${{ matrix.packages }}
           python3 -m pip install --upgrade pip
           python3 -m pip install meson
 
@@ -42,8 +44,8 @@ jobs:
         run: |
           ${CC} --version
           ${CXX} --version
-          clang-format --version
-          clang-tidy --version
+          clang-format-18 --version
+          clang-tidy-18 --version
           cmake --version
           meson --version
 
