@@ -63,7 +63,7 @@ jobs:
         run: make format-check
 
       - name: clang-tidy check
-        if: ${{ matrix.run_tidy == 'true' }}
+        if: ${{ matrix.run_tidy }}
         run: make tidy
 
   windows-msvc:
