@@ -4,7 +4,8 @@
 #include <stdint.h>
 
 static const gitledger_semantic_version_t GITLEDGER_VERSION_VALUE = {0, 1, 0};
-static char                               gitledger_version_buffer[16];
+/* 10 digits * 3 + 2 dots + 1 NUL = 33; round up for safety. */
+static char gitledger_version_buffer[34];
 
 static int write_decimal(uint32_t value, char** cursor, size_t* remaining)
 {
@@ -42,19 +43,24 @@ gitledger_semantic_version_t gitledger_semantic_version(void)
     return GITLEDGER_VERSION_VALUE;
 }
 
-const char* gitledger_semantic_version_string(void)
+size_t gitledger_semantic_version_snprintf(char* buf, size_t n)
 {
-    char*  cursor    = gitledger_version_buffer;
-    size_t remaining = sizeof(gitledger_version_buffer);
+    if (buf == NULL || n == 0)
+        {
+            return 0U;
+        }
+
+    char*  cursor    = buf;
+    size_t remaining = n;
 
     if (!write_decimal(GITLEDGER_VERSION_VALUE.major, &cursor, &remaining))
         {
-            return "";
+            return 0U;
         }
 
-    if (remaining == 0U)
+    if (remaining <= 1U)
         {
-            return "";
+            return 0U;
         }
 
     *cursor++ = '.';
@@ -62,12 +68,12 @@ const char* gitledger_semantic_version_string(void)
 
     if (!write_decimal(GITLEDGER_VERSION_VALUE.minor, &cursor, &remaining))
         {
-            return "";
+            return 0U;
         }
 
-    if (remaining == 0U)
+    if (remaining <= 1U)
         {
-            return "";
+            return 0U;
         }
 
     *cursor++ = '.';
@@ -75,14 +81,24 @@ const char* gitledger_semantic_version_string(void)
 
     if (!write_decimal(GITLEDGER_VERSION_VALUE.patch, &cursor, &remaining))
         {
-            return "";
+            return 0U;
         }
 
     if (remaining == 0U)
         {
-            return "";
+            return 0U;
         }
 
     *cursor = '\0';
+    return (size_t) (cursor - buf);
+}
+
+const char* gitledger_semantic_version_string(void)
+{
+    if (gitledger_semantic_version_snprintf(gitledger_version_buffer, sizeof(gitledger_version_buffer)) == 0U)
+        {
+            return NULL;
+        }
+
     return gitledger_version_buffer;
 }

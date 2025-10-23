@@ -1,6 +1,7 @@
 #ifndef GITLEDGER_LIBGITLEDGER_VERSION_H
 #define GITLEDGER_LIBGITLEDGER_VERSION_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -16,7 +17,10 @@ extern "C"
     } gitledger_semantic_version_t;
 
     gitledger_semantic_version_t gitledger_semantic_version(void);
-    const char*                  gitledger_semantic_version_string(void);
+
+    size_t gitledger_semantic_version_snprintf(char* buf, size_t n);
+
+    const char* gitledger_semantic_version_string(void); /* Returns NULL on failure. */
 
 #ifdef __cplusplus
 }
