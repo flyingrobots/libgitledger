@@ -9,23 +9,44 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(MSVC)
     set(PROJECT_WARNING_FLAGS /W4 /WX)
 else()
-    # Keep Unix builds strict: treat warnings as errors and enable extra diagnostics.
-    set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion)
+    # Keep Unix builds strict and hide unintended symbol exports.
+    set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -fvisibility=hidden)
 endif()
 
-add_library(gitledger STATIC
+set(LIBGITLEDGER_SOURCES
+    libgitledger/core/domain/gitledger.c
     src/version.c
 )
 
+set(LIBGITLEDGER_HEADERS
+    libgitledger/include/gitledger/gitledger.h
+    include/libgitledger/version.h
+)
+
+add_library(gitledger STATIC ${LIBGITLEDGER_SOURCES} ${LIBGITLEDGER_HEADERS})
 target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
+
 target_include_directories(gitledger
     PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/libgitledger/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
 
-include(CTest)
-add_executable(gitledger_tests tests/version_test.c)
+add_executable(gitledger_version_test tests/version_test.c)
+target_compile_options(gitledger_version_test PRIVATE ${PROJECT_WARNING_FLAGS})
+target_link_libraries(gitledger_version_test PRIVATE gitledger)
+
+add_executable(gitledger_tests libgitledger/tests/main.c)
 target_compile_options(gitledger_tests PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(gitledger_tests PRIVATE gitledger)
-add_test(NAME version COMMAND gitledger_tests)
+
+add_executable(mg-ledger libgitledger/cli/mg-ledger.c)
+target_compile_options(mg-ledger PRIVATE ${PROJECT_WARNING_FLAGS})
+target_link_libraries(mg-ledger PRIVATE gitledger)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_test(NAME version COMMAND gitledger_version_test)
+    add_test(NAME gitledger_cli_smoke COMMAND gitledger_tests)
+endif()

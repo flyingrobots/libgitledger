@@ -23,6 +23,7 @@ build-release/
 build-tidy/
 meson-debug/
 meson-release/
+meson-*/
 dist/
 
 # C build artifacts

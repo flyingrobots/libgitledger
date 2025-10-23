@@ -1,4 +1,4 @@
-# `libgitledger`
+# libgitledger
 
 Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
@@ -11,7 +11,7 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
 ## Contributing
 
-- Create work items using the **Milestone Task** issue template (`.github/ISSUE_TEMPLATE/milestone_task.md`).
+- Open work items using the **Milestone Task** issue template (`.github/ISSUE_TEMPLATE/milestone_task.md`).
 - Issue drafts can be copied from `docs/ISSUE-DRAFTS.md`; regenerate with `python3 tools/automation/generate_issue_drafts.py` after editing the breakdown.
 - Pull requests must follow `.github/pull_request_template.md` and exercise both build systems (CMake + Meson).
 - See `CONTRIBUTING.md` for detailed workflow expectations.
@@ -20,10 +20,10 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
 Running the build or tests directly against your working tree is dangerous: our
 integration tests intentionally mutate Git repositories and can trash your
-checkout if misused. To keep everyone safe we execute the entire CI matrix in
-Docker by default.
+checkout if misused. To keep everyone safe we execute the CI matrix via Docker
+by default.
 
-```bash
+```
 make cmake        # containerised CMake builds (Debug + Release)
 make meson        # containerised Meson builds (debugoptimized + release)
 make both         # run both build systems in containers
@@ -47,7 +47,7 @@ If you really need to run against the host checkout, acknowledge the risk by
 setting `I_KNOW_WHAT_I_AM_DOING=1`. The make targets will then delegate to the
 `host-*` equivalents.
 
-```bash
+```
 I_KNOW_WHAT_I_AM_DOING=1 make cmake
 I_KNOW_WHAT_I_AM_DOING=1 make test-both
 ```
@@ -56,9 +56,36 @@ You can still invoke the underlying host targets directly (`make host-cmake`,
 `make host-test-meson`, etc.), but they now abort unless you exported the
 acknowledgement flag or are already inside the container environment.
 
+### Manual build commands
+
+Prefer the make targets above, but if you need bespoke steps the raw commands
+remain available.
+
+#### CMake (Debug and Release)
+
+```
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug
+ctest --test-dir build-debug
+
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release
+```
+
+#### Meson (Debug and Release)
+
+```
+meson setup meson-debug --buildtype debugoptimized
+meson compile -C meson-debug
+meson test -C meson-debug
+
+meson setup meson-release --buildtype release
+meson compile -C meson-release
+```
+
 ### Clean / format helpers
 
-```bash
+```
 make clean        # remove build directories and artefacts
 make format       # apply clang-format in-place (runs on the host)
 ```

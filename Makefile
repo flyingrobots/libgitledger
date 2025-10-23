@@ -10,7 +10,13 @@ CLANG_FORMAT ?= clang-format
 CLANG_TIDY ?= clang-tidy
 
 DISPATCH := tools/container/dispatch.sh
-HOST_GUARD = @if [ "$${LIBGITLEDGER_IN_CONTAINER:-0}" != "1" ] && [ "$${I_KNOW_WHAT_I_AM_DOING:-0}" != "1" ]; then echo "Refusing to run host target outside Docker without I_KNOW_WHAT_I_AM_DOING=1" >&2; exit 1; fi
+HOST_GUARD = @if [ "$${LIBGITLEDGER_IN_CONTAINER:-0}" != "1" ] \
+    && [ "$${I_KNOW_WHAT_I_AM_DOING:-0}" != "1" ] \
+    && [ "$${CI:-0}" != "true" ] \
+    && [ "$${CI:-0}" != "1" ]; then \
+    echo "Refusing to run host target outside Docker without I_KNOW_WHAT_I_AM_DOING=1" >&2; \
+    exit 1; \
+fi
 
 cmake:
 	@$(DISPATCH) cmake
@@ -119,4 +125,4 @@ tidy-build:
 	tools/lint/run_clang_tidy.sh $(CLANG_TIDY)
 
 clean:
-	rm -rf build build-debug build-release build-tidy meson-debug meson-release compile_commands.json
+	rm -rf build build-debug build-release build-tidy meson-debug meson-release meson-* compile_commands.json
