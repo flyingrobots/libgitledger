@@ -8,7 +8,24 @@ if [[ -z "${DEST_ROOT}" ]]; then
     exit 1
 fi
 
-rm -rf "${DEST_ROOT}"
+if ! DEST_ROOT="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' -- "${DEST_ROOT}")"; then
+    echo "Error: unable to resolve destination root" >&2
+    exit 1
+fi
+
+case "${DEST_ROOT}" in
+    /|/bin|/usr|/home|/etc|/var|/tmp|/sys|/proc|/dev|/opt|/sbin)
+        echo "Error: DEST_ROOT cannot be a system directory: ${DEST_ROOT}" >&2
+        exit 1
+        ;;
+esac
+
+if [[ "${DEST_ROOT}" == "${HOME}" ]] || [[ "${DEST_ROOT}" == "$(pwd)" ]]; then
+    echo "Error: refusing to operate on critical path: ${DEST_ROOT}" >&2
+    exit 1
+fi
+
+rm -rf -- "${DEST_ROOT}"
 mkdir -p "${DEST_ROOT}"
 
 FIXTURE_REPO="${DEST_ROOT}/ledger-fixture"
@@ -22,9 +39,6 @@ git config --local user.email "fixture@example.com"
 echo "fixture" > README.md
 git add README.md
 git commit -q -m "Bootstrap fixture repo"
-
-git config --local --unset-all remote.origin.url >/dev/null 2>&1 || true
-git config --local --unset-all remote.origin.pushurl >/dev/null 2>&1 || true
 
 while read -r remote; do
     git remote remove "${remote}" || true
