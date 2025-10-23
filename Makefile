@@ -13,6 +13,7 @@ MARKDOWNLINT ?= npx --yes markdownlint-cli
 MARKDOWNLINT_ARGS ?= --config .markdownlint.yaml
 
 DISPATCH := tools/container/dispatch.sh
+# Prevent accidental host execution; bypass with I_KNOW_WHAT_I_AM_DOING=1 or when CI sets CI=true.
 HOST_GUARD = @if [ "$${LIBGITLEDGER_IN_CONTAINER:-0}" != "1" ] \
     && [ "$${I_KNOW_WHAT_I_AM_DOING:-0}" != "1" ] \
     && [ "$${CI:-0}" != "true" ] \
