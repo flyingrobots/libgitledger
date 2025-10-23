@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, feat/coding-standards ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux-matrix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 14 (Ubuntu 24.04)
+            os: ubuntu-24.04
+            cc: gcc
+            cxx: g++
+            run_tidy: true
+          - name: Clang 18 (Ubuntu 24.04)
+            os: ubuntu-24.04
+            cc: clang
+            cxx: clang++
+            run_tidy: false
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build cmake python3-pip ${{ matrix.cc }} ${{ matrix.cxx }} clang-format clang-tidy
+          python3 -m pip install --upgrade pip
+          python3 -m pip install meson
+
+      - name: Display toolchain versions
+        run: |
+          ${CC} --version
+          ${CXX} --version
+          clang-format --version
+          clang-tidy --version
+          cmake --version
+          meson --version
+
+      - name: Build with CMake
+        run: make cmake
+
+      - name: Run CMake tests
+        run: make test-cmake
+
+      - name: Build with Meson
+        run: make meson
+
+      - name: Run Meson tests
+        run: make test-meson
+
+      - name: clang-format check
+        run: make format-check
+
+      - name: clang-tidy check
+        if: ${{ matrix.run_tidy == 'true' }}
+        run: make tidy
+
+  windows-msvc:
+    name: MSVC (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install meson ninja
+          choco install ninja -y
+        shell: pwsh
+
+      - name: Configure CMake (Ninja)
+        run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=23
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build build-msvc
+        shell: pwsh
+
+      - name: Run CTest
+        run: ctest --test-dir build-msvc --output-on-failure
+        shell: pwsh
+
+      - name: Configure Meson
+        run: |
+          meson setup meson-msvc --buildtype release
+          meson compile -C meson-msvc
+          meson test -C meson-msvc --print-errorlogs
+        shell: pwsh

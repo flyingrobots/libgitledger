@@ -12,8 +12,10 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 ## Development Expectations
 
 - Maintain both build systems. Always ensure changes compile and test cleanly via CMake (`cmake --build`, `ctest`) and Meson (`meson compile`, `meson test`).
+- Standard commands: `make cmake`, `make meson`, `make test-cmake`, `make test-meson`.
 - Align tooling: warning flags, optional dependencies, and targets must stay consistent across CMake and Meson.
 - When adding dependencies, update both build descriptions and mention the change in the relevant issue.
+- Run `make lint` (clang-format + clang-tidy) before submitting a PR. CI enforces the same suite on GCC, Clang, and MSVC.
 
 ## Pull Requests
 

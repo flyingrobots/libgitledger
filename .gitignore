@@ -18,6 +18,11 @@ Icon
 
 # Build output directories
 build/
+build-debug/
+build-release/
+build-tidy/
+meson-debug/
+meson-release/
 dist/
 
 # C build artifacts
@@ -52,6 +57,9 @@ dist/
 *.gcda
 *.gcno
 *.gcov
+
+# Generated compilation database
+compile_commands.json
 
 # Project-specific
 .obsidian/

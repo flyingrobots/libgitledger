@@ -16,6 +16,61 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 - Pull requests must follow `.github/pull_request_template.md` and exercise both build systems (CMake + Meson).
 - See `CONTRIBUTING.md` for detailed workflow expectations.
 
+## Building
+
+### CMake (Debug and Release)
+
+```
+cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build-debug
+ctest --test-dir build-debug
+
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release
+ctest --test-dir build-release
+```
+
+### Meson (Debug and Release)
+
+```
+meson setup meson-debug --buildtype debugoptimized
+meson compile -C meson-debug
+meson test -C meson-debug
+
+meson setup meson-release --buildtype release
+meson compile -C meson-release
+meson test -C meson-release
+```
+
+### Convenience Targets
+
+Use the provided `Makefile` shortcuts:
+
+```
+make cmake        # configure + build CMake debug and release
+make meson        # configure + build Meson debug and release
+make both         # run both cmake + meson builds
+make test-cmake   # run ctest for debug/release builds
+make test-meson   # run meson test for debug/release builds
+make test-both    # execute all tests
+make clean        # remove build directories and artefacts
+make format       # apply clang-format in-place
+make format-check # verify clang-format compliance
+make tidy         # run clang-tidy with project configuration
+make lint         # run both format-check and tidy
+```
+
+## Coding Standards
+
+- `.clang-format` defines the canonical formatting rules; run `make format` to apply them and
+  `make format-check` to verify compliance.
+- `.clang-tidy` configures warnings-as-errors for the project; `make tidy` builds a dedicated compile
+  database and executes the static analysis suite.
+- `.editorconfig` captures default editor behaviour (UTF-8, LF line endings, four-space indents for C).
+- GitHub Actions executes the full lint + build matrix for GCC, Clang, and MSVC. macOS is not part of the
+  hosted matrix to keep CI costs manageable; if you develop on macOS, consider a local pre-push hook that
+  runs `make lint`.
+
 ## License
 
 libgitledger is released under the [MIND-UCAL License v1.0](LICENSE), aligned with the Universal Charter. See `NOTICE` for attribution details.
