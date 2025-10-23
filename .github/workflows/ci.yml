@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, feat/coding-standards ]
+    branches: [main, feat/coding-standards]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   linux-matrix:
