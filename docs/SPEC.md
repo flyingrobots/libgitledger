@@ -243,7 +243,6 @@ graph LR
     style PL_INDEXER fill:#FFE4B5,stroke:#333,stroke-width:2px
 ```
 
-
 ```mermaid
 graph LR
     subgraph "Clients"
@@ -460,6 +459,7 @@ sequenceDiagram
     App_Services-->>Public_API: new_commit_oid
     Public_API-->>Client: new_commit_oid (GL_OK)
 ```
+
 #### Domain Core
 
 Pure C types & logic
