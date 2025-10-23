@@ -64,6 +64,7 @@ jobs:
 
       - name: clang-tidy check
         if: ${{ matrix.run_tidy }}
+        # tools/lint/run_clang_tidy.sh filters compile_commands.json to exclude test TU entries
         run: make tidy
 
   windows-msvc:

@@ -11,7 +11,7 @@ Checks: >
   -readability-magic-numbers,
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(include|src)/.*\.(h|c)$'
+HeaderFilterRegex: '(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
