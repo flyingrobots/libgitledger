@@ -88,6 +88,7 @@ meson compile -C meson-release
 ```
 make clean        # remove build directories and artefacts
 make format       # apply clang-format in-place (runs on the host)
+make markdownlint # lint Markdown docs using markdownlint-cli
 ```
 
 ## Coding Standards

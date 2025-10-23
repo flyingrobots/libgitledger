@@ -8,6 +8,8 @@ test: test-both
 
 CLANG_FORMAT ?= clang-format
 CLANG_TIDY ?= clang-tidy
+MARKDOWNLINT ?= npx --yes markdownlint-cli
+MARKDOWNLINT_ARGS ?= --config .markdownlint.yaml
 
 DISPATCH := tools/container/dispatch.sh
 HOST_GUARD = @if [ "$${LIBGITLEDGER_IN_CONTAINER:-0}" != "1" ] \
@@ -87,20 +89,18 @@ format:
 	fi
 
 format-check:
-	$(MAKE) host-format-check
-
-container-format-check:
 	@$(DISPATCH) format-check
+
+container-format-check: format-check
 
 host-format-check:
 	$(HOST_GUARD)
 	tools/lint/clang_format_check.sh $(CLANG_FORMAT)
 
 lint:
-	$(MAKE) host-lint
-
-container-lint:
 	@$(DISPATCH) lint
+
+container-lint: lint
 
 host-lint:
 	$(HOST_GUARD)
@@ -108,10 +108,9 @@ host-lint:
 	$(MAKE) host-tidy
 
 tidy:
-	$(MAKE) host-tidy
-
-container-tidy:
 	@$(DISPATCH) tidy
+
+container-tidy: tidy
 
 host-tidy:
 	$(HOST_GUARD)
@@ -123,6 +122,14 @@ host-tidy:
 
 tidy-build:
 	tools/lint/run_clang_tidy.sh $(CLANG_TIDY)
+
+markdownlint:
+	@files="$(shell git ls-files '*.md')"; \
+	if [ -z "$$files" ]; then \
+		echo "markdownlint: no markdown files found"; \
+	else \
+		$(MARKDOWNLINT) $(MARKDOWNLINT_ARGS) $$files; \
+	fi
 
 clean:
 	rm -rf build build-debug build-release build-tidy meson-debug meson-release meson-* compile_commands.json
