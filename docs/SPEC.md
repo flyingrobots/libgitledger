@@ -699,7 +699,7 @@ Verification uses `libgit2` extraction + pluggable verification backend (GPGME/S
 
 ### Indexing
 
-Indexer callback parses your payload format and emits “terms” (`key:value`).
+Indexer callback parses payload format and emits “terms” (`key:value`).
 
 ### Querying
 
@@ -733,7 +733,7 @@ libgitledger/
 └─ cli/ # 'git-ledger' demo tool
 ```
 
-This is your earlier tree, aligned to the hexagonal structure you used in git‑mind.
+This is aligned to the hexagonal structure used in [git‑mind](https://github.com/neuroglyph/git-mind).
 
 ---
 
@@ -761,4 +761,4 @@ This is your earlier tree, aligned to the hexagonal structure you used in git‑
 - Adapter tests against `libgit2` with ephemeral repos.
 - Integration tests covering policy/trust/signing, notes, tag association, cache rebuild + queries.
 - Property tests (fuzz payloads, malformed policy/trust).
-- CI in Docker matrix; protect your local repo (shiplog’s discipline carried over). ￼
+- CI in Docker matrix; protect the local repo (shiplog’s discipline carried over). ￼
