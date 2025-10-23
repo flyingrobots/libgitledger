@@ -11,7 +11,7 @@ Checks: >
   -readability-magic-numbers,
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(include|src|libgitledger)/.*\.(h|c)$'
+HeaderFilterRegex: '^(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
@@ -62,7 +62,19 @@ CheckOptions:
   - key: bugprone-suspicious-string-compare.WarnOnLogicalNotComparison
     value: 'true'
   - key: cert-err33-c.CheckedFunctions
-    value: '::aligned_alloc;::calloc;::clock;::fclose;::ferror;::fflush;::fgetc;::fgetpos;::fgets;::fgetwc;::fopen;::fprintf;::fputc;::fputs;::fputwc;::fread;::freopen;::fscanf;::fseek;::fsetpos;::ftell;::fwprintf;::fwrite;::fwscanf;::getc;::getchar;::gets;::getwc;::getwchar;::gmtime;::localtime;::malloc;::mbrtowc;::mbsrtowcs;::mbstowcs;::memchr;::mktime;::printf;::putc;::putchar;::puts;::putwc;::putwchar;::raise;::realloc;::remove;::rename;::scanf;::setlocale;::setvbuf;::signal;::snprintf;::sprintf;::sscanf;::strchr;::strerror_s;::strftime;::strpbrk;::strrchr;::strstr;::strtod;::strtof;::strtoimax;::strtok;::strtol;::strtoll;::strtoul;::strtoull;::strtoumax;::strxfrm;::swprintf;::swscanf;::time;::tmpfile;::tmpnam;::ungetc;::ungetwc;::vfprintf;::vfscanf;::vfwprintf;::vfwscanf;::vprintf;::vscanf;::vsnprintf;::vsprintf;::vsscanf;::vswprintf;::vswscanf;::vwprintf;::vwscanf;::wcrtomb;::wcschr;::wcsftime;::wcspbrk;::wcsrchr;::wcsrtombs;::wcsstr;::wcstod;::wcstof;::wcstoimax;::wcstok;::wcstol;::wcstoll;::wcstombs;::wcstoul;::wcstoull;::wcstoumax;::wcsxfrm;::wctob;::wmemchr;::wprintf;::wscanf'
+    # Mirror the cert-err33-c default allowlist so we can trim entries locally in future diffs.
+    value: |
+      ::aligned_alloc;::calloc;::clock;::fclose;::ferror;::fflush;::fgetc;::fgetpos;::fgets;::fgetwc;::fopen;
+      ::fprintf;::fputc;::fputs;::fputwc;::fread;::freopen;::fscanf;::fseek;::fsetpos;::ftell;::fwprintf;
+      ::fwrite;::fwscanf;::getc;::getchar;::gets;::getwc;::getwchar;::gmtime;::localtime;::malloc;::mbrtowc;
+      ::mbsrtowcs;::mbstowcs;::memchr;::mktime;::printf;::putc;::putchar;::puts;::putwc;::putwchar;::raise;
+      ::realloc;::remove;::rename;::scanf;::setlocale;::setvbuf;::signal;::snprintf;::sprintf;::sscanf;::strchr;
+      ::strerror_s;::strftime;::strpbrk;::strrchr;::strstr;::strtod;::strtof;::strtoimax;::strtok;::strtol;
+      ::strtoll;::strtoul;::strtoull;::strtoumax;::strxfrm;::swprintf;::swscanf;::time;::tmpfile;::tmpnam;
+      ::ungetc;::ungetwc;::vfprintf;::vfscanf;::vfwprintf;::vfwscanf;::vprintf;::vscanf;::vsnprintf;::vsprintf;
+      ::vsscanf;::vswprintf;::vswscanf;::vwprintf;::vwscanf;::wcrtomb;::wcschr;::wcsftime;::wcspbrk;::wcsrchr;
+      ::wcsrtombs;::wcsstr;::wcstod;::wcstof;::wcstoimax;::wcstok;::wcstol;::wcstoll;::wcstombs;::wcstoul;
+      ::wcstoull;::wcstoumax;::wcsxfrm;::wctob;::wmemchr;::wprintf;::wscanf
   - key: performance-move-const-arg.CheckTriviallyCopyableMove
     value: 'false'
   - key: performance-no-automatic-move.AllowedTypes
