@@ -13,12 +13,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IMAGE_NAME="${LIBGITLEDGER_CONTAINER_IMAGE:-libgitledger-ci:latest}"
 
-echo "[container] Building image ${IMAGE_NAME}"
-docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[container] ERROR: docker is required" >&2
+    exit 1
+fi
+
+if [[ "${LIBGITLEDGER_SKIP_BUILD:-0}" == "1" ]]; then
+    echo "[container] Skipping image build because LIBGITLEDGER_SKIP_BUILD=1"
+else
+    echo "[container] Ensuring image ${IMAGE_NAME} is available"
+    docker pull "${IMAGE_NAME}" >/dev/null 2>&1 || true
+    if ! docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
+        echo "[container] Building image ${IMAGE_NAME}"
+        docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+    fi
+fi
 
 matrix_configs=(
-    "name=gcc-14 cc=gcc-14 cxx=g++-14 run_tidy=1"
-    "name=clang-18 cc=clang cxx=clang++ run_tidy=0"
+    $'name=gcc-14\ncc=gcc-14\ncxx=g++-14\nrun_tidy=1'
+    $'name=clang-18\ncc=clang\ncxx=clang++\nrun_tidy=0'
 )
 
 max_jobs="${LIBGITLEDGER_MATRIX_JOBS:-0}"
@@ -35,7 +48,8 @@ start_job() {
     local cxx=""
     local run_tidy="1"
 
-    for pair in ${config}; do
+    while IFS= read -r pair; do
+        [[ -z "${pair}" ]] && continue
         local key="${pair%%=*}"
         local value="${pair#*=}"
         case "${key}" in
@@ -44,7 +58,7 @@ start_job() {
             cxx) cxx="${value}" ;;
             run_tidy) run_tidy="${value}" ;;
         esac
-    done
+    done <<< "${config}"
 
     if [[ -z "${name}" ]]; then
         echo "[container] ERROR: matrix entry missing name" >&2
@@ -56,7 +70,9 @@ start_job() {
         return 2
     fi
 
-    local docker_cmd="/workspace/tools/container/invoke.sh $(printf '%q' "${TARGET}")"
+    local target_escaped
+    target_escaped=$(printf '%q' "${TARGET}")
+    local docker_cmd="/workspace/tools/container/invoke.sh ${target_escaped}"
     for arg in "$@"; do
         docker_cmd+=" $(printf '%q' "${arg}")"
     done
@@ -99,9 +115,11 @@ wait_for_oldest_job() {
 }
 
 for config in "${matrix_configs[@]}"; do
-    if start_job "${config}" "$@"; then
+    start_job "${config}" "$@"
+    rc=$?
+    if [[ ${rc} -eq 0 ]]; then
         :
-    elif [[ $? -eq 2 ]]; then
+    elif [[ ${rc} -eq 2 ]]; then
         continue
     else
         status=1
@@ -118,4 +136,3 @@ while [[ ${#job_pids[@]} -gt 0 ]]; do
 done
 
 exit "${status}"
-
