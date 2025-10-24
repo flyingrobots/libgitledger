@@ -11,13 +11,12 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 
 ## Development Expectations
 
-- Maintain both build systems. Always ensure changes compile and test cleanly via CMake (`cmake --build`, `ctest`) and Meson (`meson compile`, `meson test`).
-- Standard build commands:
-  - CMake debug: `cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug && cmake --build build-debug && ctest --test-dir build-debug`
-  - Meson debug: `meson setup meson-debug --buildtype debugoptimized && meson compile -C meson-debug && meson test -C meson-debug`
-  - Repeat with `build-release` / `meson-release` for release builds.
+- Maintain both build systems. Preferred: run the containerised make targets (`make cmake`, `make meson`, `make test-both`) so you exercise the same matrix CI runs. These jobs copy the repo into isolated workspaces, prepare sandbox Git fixtures, and remove all remotes before mutating anything.
+- If you must run directly on the host checkout, export `I_KNOW_WHAT_I_AM_DOING=1` before invoking host targets. The makefile will otherwise abort unless it detects the container guard. Manual command sequences for CMake/Meson live in the README if you need to craft bespoke invocations.
 - Align tooling: warning flags, optional dependencies, and targets must stay consistent across CMake and Meson.
 - When adding dependencies, update both build descriptions and mention the change in the relevant issue.
+- Run `make lint` (containerised clang-format + clang-tidy) before submitting a PR. CI enforces the same suite on GCC, Clang, and MSVC.
+- Need to bypass clang-tidy for a quick repro? Run `RUN_TIDY=0 make host-tidy` locally, but flip it back to 1 before shipping anything.
 
 ## Pull Requests
 

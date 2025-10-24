@@ -1,8 +1,8 @@
 # `libgitledger`
 
-> A *Git‑Native* Ledger Library (C, `libgit2`): Spec + Project Plan with Step‑By‑Step Tasks & Tests
+> A *Git-Native* Ledger Library (C, `libgit2`): Spec + Project Plan with Step-By-Step Tasks & Tests
 
-This is the unification of two proven systems: **Shiplog**’s field‑tested deployment ledger and **git‑mind**’s hexagonal, binary‑safe engine, distilled into a reusable C library with a stable ABI and high‑performance indexing. It uses Git itself as the database, leans on `libgit2`, and bakes in policy + trust. In short: batteries included, foot‑guns removed.
+This is the unification of two proven systems: **Shiplog**’s field-tested deployment ledger and **git-mind**’s hexagonal, binary-safe engine, distilled into a reusable C library with a stable ABI and high-performance indexing. It uses Git itself as the database, leans on `libgit2`, and bakes in policy + trust. In short: batteries included, foot-guns removed.
 
 ---
 
@@ -19,33 +19,33 @@ This is the unification of two proven systems: **Shiplog**’s field‑tested de
 
 - **Git backend**: `libgit2` (not shelling out) — keeps things fast, safe, and embeddable.
 - **Architecture**: strict Hexagonal (ports & adapters).
-- **Governance**: Policy‑as‑Code + Multi‑Signature Trust are first‑class in the library (not app‑specific).
+- **Governance**: Policy-as-Code + Multi-Signature Trust are first-class in the library (not app-specific).
 - **Query performance**: Roaring bitmap cache, rebuildable.
 
-These choices align with my previous work, the `git‑mind`/`shiplog` lineage.
+These choices align with my previous work, the `git-mind`/`shiplog` lineage.
 
 ---
 
 ## I. Overview
 
-`libgitledger` is a portable, embeddable C library for append‑only ledgers inside a Git repository. Each ledger is a linear history of Git commits on dedicated refs; entries are optionally signed, policy‑checked, and indexed for instant queries. It enables both human‑readable (`shiplog` style) and binary‑safe (`git‑mind` style) payloads via a pluggable encoder. ￼
+`libgitledger` is a portable, embeddable C library for append-only ledgers inside a Git repository. Each ledger is a linear history of Git commits on dedicated refs; entries are optionally signed, policy-checked, and indexed for instant queries. It enables both human-readable (`shiplog` style) and binary-safe (`git-mind` style) payloads via a pluggable encoder. ￼
 
-**Why this exists**: I’ve built the pattern twice already. `shiplog` (battle‑tested CLI & policy/trust) and `git‑mind` (rigorous hexagonal architecture + roaring bitmap cache). `libgitledger` fuses them into one stable core library with bindings for Go/JS/Python.
+**Why this exists**: I’ve built the pattern twice already. `shiplog` (battle-tested CLI & policy/trust) and `git-mind` (rigorous hexagonal architecture + roaring bitmap cache). `libgitledger` fuses them into one stable core library with bindings for Go/JS/Python.
 
 ---
 
-## II. Goals & Non‑Goals
+## II. Goals & Non-Goals
 
 ### Goals
 
-- Git‑native persistence (objects + refs are the DB).
-- Append‑only (fast‑forward only), immutability by default.
-- Library‑first: stable C ABI, no global state; embeddable; safe for bindings.
-- Pluggable encoder/indexer so shiplog and git‑mind both fit naturally. ￼
-- Policy as Code and Multi‑Signature Trust (chain or attestation) built‑in. ￼
-- High‑performance queries using roaring bitmap cache, fully rebuildable. ￼
+- Git-native persistence (objects + refs are the DB).
+- Append-only (fast-forward only), immutability by default.
+- Library-first: stable C ABI, no global state; embeddable; safe for bindings.
+- Pluggable encoder/indexer so shiplog and git-mind both fit naturally. ￼
+- Policy as Code and Multi-Signature Trust (chain or attestation) built-in. ￼
+- High-performance queries using roaring bitmap cache, fully rebuildable. ￼
 
-### Non‑Goals
+### Non-Goals
 
 - Not a full “ledger server”. No background daemons; it’s a library.
 - Not a replacement for Git’s transport/auth or repo mgmt.
@@ -55,8 +55,8 @@ These choices align with my previous work, the `git‑mind`/`shiplog` lineage.
 
 ## III. Core Principles
 
-- **Git‑Native**: object store + refs as the database; ref updates = writes.
-- **Append‑Only**: fast‑forward updates; rejects history rewrites.
+- **Git-Native**: object store + refs as the database; ref updates = writes.
+- **Append-Only**: fast-forward updates; rejects history rewrites.
 - **Hexagonal Architecture**: domain core is pure C; all I/O behind ports; libgit2 only in adapters. ￼
 - **Pluggable Everything**: allocators, loggers, encoders, indexers. ￼
 - **Secure & Auditable**: signing, policy enforcement, trust thresholds. ￼
@@ -68,18 +68,18 @@ These choices align with my previous work, the `git‑mind`/`shiplog` lineage.
 
 **Ref map (per ledger `L`)**:
 
-- **Journal (append‑only commits)**: `refs/gitledger/journal/<L>`
+- **Journal (append-only commits)**: `refs/gitledger/journal/<L>`
 - **Cache (roaring bitmaps)**: `refs/gitledger/cache/<L>`
 - **Policy doc**: `refs/gitledger/policy/<L>`
 - **Trust doc**: `refs/gitledger/trust/<L>`
 - **Entry notes**: `refs/gitledger/notes/<L>`
-- **Tag–entry associations (notes on tag objects)**: `refs/gitledger/tag_notes`
+- **Tag-entry associations (notes on tag objects)**: `refs/gitledger/tag_notes`
 
-This structure blends `shiplog`’s policy/trust refs and `git‑mind`’s journal/cache separation.
+This structure blends `shiplog`’s policy/trust refs and `git-mind`’s journal/cache separation.
 
 **Entry** = a Git commit on the ledger ref.
 
-- Payload lives in the commit message (encoder‑defined; can be human‑readable with JSON trailers like `shiplog` or base64‑CBOR like `git‑mind`).
+- Payload lives in the commit message (encoder-defined; can be human-readable with JSON trailers like `shiplog` or base64-CBOR like `git-mind`).
 - **Notes**: arbitrary blobs (`stdout`/`stderr`, artifacts) via Git notes on the entry commit. (Shiplog’s `run` semantics made general.) ￼
 - **Signatures**: commit signatures or detached attestations, enforced by policy/trust. ￼
 
@@ -243,11 +243,10 @@ graph LR
     style PL_INDEXER fill:#FFE4B5,stroke:#333,stroke-width:2px
 ```
 
-
 ```mermaid
 graph LR
     subgraph "Clients"
-        A["CLI Tool (e.g., mg-ledger)"]
+        A["CLI Tool (e.g., git-ledger)"]
         B["Higher-Level App (e.g., git-mind)"]
         C["Language Bindings (Go, JS, Python)"]
     end
@@ -460,6 +459,7 @@ sequenceDiagram
     App_Services-->>Public_API: new_commit_oid
     Public_API-->>Client: new_commit_oid (GL_OK)
 ```
+
 #### Domain Core
 
 Pure C types & logic
@@ -477,9 +477,9 @@ Pure C types & logic
 #### Adapters
 
 - `libgit2` adapter implements `git_repo_port`.
-- `stdio` logger; `null` metrics; POSIX `temp‑fs`, etc.
+- `stdio` logger; `null` metrics; POSIX `temp-fs`, etc.
 
-This mirrors `git‑mind`’s pattern exactly, making unit tests trivial and adapters swappable. ￼
+This mirrors `git-mind`’s pattern exactly, making unit tests trivial and adapters swappable. ￼
 
 ### 5.2 Memory & Logging
 
@@ -655,15 +655,15 @@ void gitledger_error_free(gitledger_error_t *err);
 
 **Notes:**
 
-- Encoders return bytes; we do not force UTF‑8. Git will store the bytes; use textual encodings (e.g., JSON + trailers; base64‑CBOR) when needed. (Matches `shiplog`/`git‑mind` styles.)
+- Encoders return bytes; we do not force UTF-8. Git will store the bytes; use textual encodings (e.g., JSON + trailers; base64-CBOR) when needed. (Matches `shiplog`/`git-mind` styles.)
 - Policy/Trust are JSON; the library enforces them during `append()` and on `verify_ledger_integrity()`. (Shiplog precedent.) ￼
 - Tag association uses notes on tag objects under `refs/gitledger/tag_notes`. ￼
 
 ---
 
-## VII. Policy & Trust (built‑in)
+## VII. Policy & Trust (built-in)
 
-### Policy as Code (per‑ledger)
+### Policy as Code (per-ledger)
 
 `policy.json` under `refs/gitledger/policy/<L>` with keys like:
 
@@ -675,12 +675,12 @@ void gitledger_error_free(gitledger_error_t *err);
 
 Enforced at append and verify time. Mirrors `shiplog`’s model, generalized for any ledger. ￼
 
-### Multi‑Signature Trust
+### Multi-Signature Trust
 
 `trust.json` under `refs/gitledger/trust/<L>` including:
 
 - `maintainers: [{id, email, key_fingerprint}]`
-- `threshold: N` (N‑of‑M approvals for trust changes)
+- `threshold: N` (N-of-M approvals for trust changes)
 - `signature_mode: "chain" | "attestation"`
 - `allowed_signers: [...]`
 
@@ -689,7 +689,7 @@ Library verifies signatures of entries against current trust + policy; updates t
 ### Signatures
 
 - **Chain** = signed commit.
-- **Attestation** = detached SSH/GPG signature note co‑stored and linked.
+- **Attestation** = detached SSH/GPG signature note co-stored and linked.
 
 Verification uses `libgit2` extraction + pluggable verification backend (GPGME/SSH sig adapter), defaulting to “present + fingerprint match” until crypto adapter is configured.
 
@@ -699,13 +699,13 @@ Verification uses `libgit2` extraction + pluggable verification backend (GPGME/S
 
 ### Indexing
 
-Indexer callback parses your payload format and emits “terms” (`key:value`).
+Indexer callback parses payload format and emits “terms” (`key:value`).
 
 ### Querying
 
 Library builds roaring bitmaps: one bitmap per term; entry IDs are ordinal positions in the ledger chain.
 
-Queries are boolean set ops over bitmaps (`AND`/`OR`/`NOT`). Cache is rebuildable from journal. This mirrors git‑mind’s fast query path. ￼
+Queries are boolean set ops over bitmaps (`AND`/`OR`/`NOT`). Cache is rebuildable from journal. This mirrors git-mind’s fast query path. ￼
 
 Query API accepts a term array with leading operator shorthands (`+` for **MUST**, `-` for **MUST_NOT**). Result is an iterator of matching entry OIDs.
 
@@ -713,8 +713,8 @@ Query API accepts a term array with leading operator shorthands (`+` for **MUST*
 
 ## IX. Concurrency, Atomicity, & Integrity
 
-- **Append is optimistic**: we read `HEAD_oid`, create a commit object, then try to fast‑forward `refs/gitledger/journal/<L>` from `HEAD_oid` → `new_oid`. If the ref moved, return `GL_ERR_CONFLICT` so the caller retries after reloading latest.
-- **Integrity audit**: linear parent chain check, ref integrity, optional BLAKE3 checksums on ref tips. (You flagged this as “self‑audit hooks.”) ￼
+- **Append is optimistic**: we read `HEAD_oid`, create a commit object, then try to fast-forward `refs/gitledger/journal/<L>` from `HEAD_oid` → `new_oid`. If the ref moved, return `GL_ERR_CONFLICT` so the caller retries after reloading latest.
+- **Integrity audit**: linear parent chain check, ref integrity, optional BLAKE3 checksums on ref tips. (You flagged this as “self-audit hooks.”) ￼
 
 ---
 
@@ -730,10 +730,10 @@ libgitledger/
 ├─ core/policy_trust/ # policy & trust logic
 ├─ adapters/ # logger/fs/env/signing adapters
 ├─ tests/ # unit + integration
-└─ cli/ # 'mg-ledger' demo tool
+└─ cli/ # 'git-ledger' demo tool
 ```
 
-This is your earlier tree, aligned to the hexagonal structure you used in git‑mind.
+This is aligned to the hexagonal structure used in [git-mind](https://github.com/neuroglyph/git-mind).
 
 ---
 
@@ -741,8 +741,8 @@ This is your earlier tree, aligned to the hexagonal structure you used in git‑
 
 - No shell `exec` in core; signing/verification uses pluggable crypto adapters.
 - Key material never stored by lib; only fingerprints/IDs in trust docs.
-- Policy default‑deny if document missing (configurable).
-- Replay protection via append‑only + trust verification; server‑side hooks recommended (`pre‑receive`) — pattern borrowed from `shiplog`. ￼
+- Policy default-deny if document missing (configurable).
+- Replay protection via append-only + trust verification; server-side hooks recommended (`pre-receive`) — pattern borrowed from `shiplog`. ￼
 
 ---
 
@@ -751,7 +751,7 @@ This is your earlier tree, aligned to the hexagonal structure you used in git‑
 - Stable C ABI (opaque handles; no inline structs in public headers).
 - No global state; all config on a context or ledger handle.
 - Bindings can map errors to idiomatic exceptions/results (Go, JS, Python).
-- Threading: ledger handles are not thread‑safe; concurrent reads via separate handles; concurrent appends require higher‑level retry.
+- Threading: ledger handles are not thread-safe; concurrent reads via separate handles; concurrent appends require higher-level retry.
 
 ---
 
@@ -761,4 +761,4 @@ This is your earlier tree, aligned to the hexagonal structure you used in git‑
 - Adapter tests against `libgit2` with ephemeral repos.
 - Integration tests covering policy/trust/signing, notes, tag association, cache rebuild + queries.
 - Property tests (fuzz payloads, malformed policy/trust).
-- CI in Docker matrix; protect your local repo (shiplog’s discipline carried over). ￼
+- CI in Docker matrix; protect the local repo (shiplog’s discipline carried over). ￼

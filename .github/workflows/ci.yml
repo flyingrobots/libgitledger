@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/coding-standards]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux-matrix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 14 (Ubuntu 24.04)
+            os: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            packages: gcc-14 g++-14 clang-format-18 clang-tidy-18
+            clang_format: clang-format-18
+            clang_tidy: clang-tidy-18
+            run_tidy: true
+          - name: Clang 18 (Ubuntu 24.04)
+            os: ubuntu-24.04
+            cc: clang-18
+            cxx: clang++-18
+            packages: clang-18 clang++-18 clang-format-18 clang-tidy-18
+            clang_format: clang-format-18
+            clang_tidy: clang-tidy-18
+            run_tidy: false
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      CLANG_FORMAT: ${{ matrix.clang_format }}
+      CLANG_TIDY: ${{ matrix.clang_tidy }}
+      LIBGITLEDGER_CONTAINER_IMAGE: libgitledger-ci:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build cmake python3-pip rsync ${{ matrix.packages }}
+          python3 -m pip install --upgrade pip
+          python3 -m pip install meson
+
+      - name: Display toolchain versions
+        run: |
+          ${CC} --version
+          ${CXX} --version
+          ${CLANG_FORMAT} --version
+          ${CLANG_TIDY} --version
+          cmake --version
+          meson --version
+
+      - name: Verify Docker availability
+        run: docker version
+
+      - name: Pre-build CI container image
+        run: docker build -t libgitledger-ci:latest -f tools/container/Dockerfile .
+
+      - name: Verify make targets exist
+        # The container dispatch script expects these orchestrated targets; a dry run proves they resolve.
+        run: |
+          for target in cmake test-cmake meson test-meson format-check tidy; do
+            make -n "$target" >/dev/null
+          done
+
+      - name: Build with CMake
+        run: make cmake
+
+      - name: Run CMake tests
+        run: make test-cmake
+
+      - name: Build with Meson
+        run: make meson
+
+      - name: Run Meson tests
+        run: make test-meson
+
+      - name: clang-format check
+        run: make format-check
+
+      - name: clang-tidy check
+        if: ${{ matrix.run_tidy }}
+        # tools/lint/run_clang_tidy.sh filters compile_commands.json to exclude test TU entries
+        run: make tidy
+
+      - name: Validate activity log schema
+        run: make activity-validate
+
+  windows-msvc:
+    name: MSVC (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install meson ninja
+          choco install ninja -y
+        shell: pwsh
+
+      - name: Configure CMake (Ninja)
+        run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=17 -DCMAKE_C_STANDARD_REQUIRED=ON
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build build-msvc
+        shell: pwsh
+
+      - name: Run CTest
+        run: ctest --test-dir build-msvc --output-on-failure
+        shell: pwsh
+
+      - name: Configure Meson
+        run: |
+          meson setup meson-msvc --buildtype release
+          meson compile -C meson-msvc
+          meson test -C meson-msvc --print-errorlogs
+        shell: pwsh

@@ -1,0 +1,19 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+UseTab: Never
+BreakBeforeBraces: GNU
+AllowShortIfStatementsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Empty
+PointerAlignment: Left
+DerivePointerAlignment: false
+SpaceBeforeCpp11BracedList: true
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveDeclarations: Consecutive
+AlignTrailingComments: true
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+IncludeBlocks: Preserve
+# Keep include sorting enabled to ensure consistent formatter output across tooling.
+SortIncludes: true

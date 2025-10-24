@@ -8,7 +8,7 @@ Anchored to `docs/PROJECT-PLAN.md`. Use this as a checklist when creating GitHub
    - Deliverables: directory structure, LICENSE, README stub, CONTRIBUTING stub.
    - Tests: none (structural).
 2. `[M0] Dual build system bootstrap` — author `CMakeLists.txt` + `meson.build` with shared flags.
-   - Deliverables: debug/release targets for `gitledger`, `gitledger_tests`, `mg-ledger`.
+   - Deliverables: debug/release targets for `gitledger`, `gitledger_tests`, `git-ledger`.
    - Tests: smoke build in both configurations.
 3. `[M0] Dependency placeholders` — wire `libgit2` detection, stubs for CRoaring/BLAKE3 in both build files.
    - Tests: configure succeeds even when optional deps missing (guarded options).
@@ -57,7 +57,7 @@ Anchored to `docs/PROJECT-PLAN.md`. Use this as a checklist when creating GitHub
 
 1. `[M5] Notes API` — attach/read notes per entry.
 2. `[M5] Tag association` — map annotated tags to entries.
-3. `[M5] CLI enhancements` — mg-ledger commands for notes/tags.
+3. `[M5] CLI enhancements` — git-ledger commands for notes/tags.
 4. `[M5] Integration tests` — round-trip binary notes, tag lookups.
 
 ## Milestone M6 — Indexer & Query Cache
@@ -66,7 +66,7 @@ Anchored to `docs/PROJECT-PLAN.md`. Use this as a checklist when creating GitHub
 2. `[M6] CRoaring integration` — vendor + expose through both builds.
 3. `[M6] Cache writer` — build/rebuild logic with serialization.
 4. `[M6] Query engine` — boolean term evaluation over bitmaps.
-5. `[M6] CLI query commands` — mg-ledger query UX.
+5. `[M6] CLI query commands` — git-ledger query UX.
 6. `[M6] Tests` — unit + integration covering bitmap ops.
 
 ## Milestone M7 — Integrity & Self-Audit
