@@ -4,6 +4,7 @@
 #define GITLEDGER_VERSION_MINOR 1
 #define GITLEDGER_VERSION_PATCH 0
 
+/* Encoded as major * 10000 + minor * 100 + patch for numeric comparisons (see version spec). */
 enum
 {
     GITLEDGER_VERSION_MAJOR_FACTOR = 10000,
