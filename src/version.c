@@ -10,7 +10,7 @@ enum
     GITLEDGER_VERSION_DECIMAL_DIGIT_CAP = 10,
     GITLEDGER_VERSION_DECIMAL_BASE      = 10,
     /* 10 digits * 3 + 2 dots + 1 NUL = 33; round up for safety. */
-    GITLEDGER_VERSION_BUFFER_SIZE       = 34
+    GITLEDGER_VERSION_BUFFER_SIZE = 34
 };
 
 static char gitledger_version_buffer[GITLEDGER_VERSION_BUFFER_SIZE];
