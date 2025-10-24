@@ -102,6 +102,7 @@ if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# Bind the header filter to the concrete repo root so clang-tidy never walks system headers.
 header_filter="${CLANG_TIDY_HEADER_FILTER:-}"
 if [[ -z "${header_filter}" ]]; then
   header_filter=$(python3 - <<'PY'
@@ -112,6 +113,20 @@ escaped = re.escape(repo_root)
 print(f"^{escaped}/(include|src|libgitledger)/.*\\.(h|c)$")
 PY
   )
+fi
+
+if ! HEADER_FILTER="${header_filter}" python3 - <<'PY'; then
+import os
+import re
+import sys
+pattern = os.environ["HEADER_FILTER"]
+try:
+    re.compile(pattern)
+except re.error as exc:
+    sys.stderr.write(f"clang-tidy: invalid header filter '{pattern}': {exc}\n")
+    sys.exit(1)
+PY
+  exit 1
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then
