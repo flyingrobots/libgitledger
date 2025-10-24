@@ -102,6 +102,18 @@ if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   exit 1
 fi
 
+header_filter="${CLANG_TIDY_HEADER_FILTER:-}"
+if [[ -z "${header_filter}" ]]; then
+  header_filter=$(python3 - <<'PY'
+import os
+import re
+repo_root = os.path.abspath('.')
+escaped = re.escape(repo_root)
+print(f"^{escaped}/(include|src|libgitledger)/.*\\.(h|c)$")
+PY
+  )
+fi
+
 if [[ "$(uname)" == "Darwin" ]]; then
   if [[ -z "${SDKROOT:-}" ]]; then
     if sdk_path=$(xcrun --show-sdk-path 2>/dev/null); then
@@ -118,5 +130,5 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 for source in "${filtered_sources[@]}"; do
-  "${tidy_bin}" --quiet -p "${filtered_dir}" "${source}"
+  "${tidy_bin}" -p "${filtered_dir}" --header-filter="${header_filter}" "${source}"
 done

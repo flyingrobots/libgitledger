@@ -8,18 +8,9 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -readability-magic-numbers,
-  -readability-use-concise-preprocessor-directives,
-  -readability-identifier-length,
-  -readability-braces-around-statements,
-  -readability-else-after-return,
-  -bugprone-easily-swappable-parameters,
-  -bugprone-reserved-identifier,
-  -bugprone-macro-parentheses,
-  -cert-dcl37-c,
-  -cert-dcl51-cpp
+  -readability-magic-numbers
 WarningsAsErrors: '*'
-HeaderFilterRegex: '^(include|src|libgitledger)/.*\.(h|c)$'
+HeaderFilterRegex: '^.*/libgitledger/(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
