@@ -9,7 +9,15 @@ Checks: >
   portability-*,
   readability-*,
   -readability-magic-numbers,
-  -bugprone-easily-swappable-parameters
+  -readability-use-concise-preprocessor-directives,
+  -readability-identifier-length,
+  -readability-braces-around-statements,
+  -readability-else-after-return,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -bugprone-macro-parentheses,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp
 WarningsAsErrors: '*'
 HeaderFilterRegex: '^(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
