@@ -42,19 +42,26 @@ if(GITLEDGER_VENDOR_LIBGIT2)
     message(FATAL_ERROR "Vendored libgit2 support is not implemented yet. Install libgit2 or configure without -DGITLEDGER_VENDOR_LIBGIT2=ON.")
 endif()
 
-find_package(PkgConfig)
+set(GITLEDGER_LIBGIT2_TARGET "")
 
-if(NOT PKG_CONFIG_FOUND)
-    message(FATAL_ERROR "pkg-config was not found. Install pkg-config (e.g. 'sudo apt-get install pkg-config', 'brew install pkg-config', or 'choco install pkgconfiglite') and reconfigure.")
+find_package(LibGit2 QUIET)
+if(LibGit2_FOUND)
+    set(GITLEDGER_LIBGIT2_TARGET LibGit2::LibGit2)
+else()
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(LIBGIT2 IMPORTED_TARGET libgit2)
+        if(LIBGIT2_FOUND)
+            set(GITLEDGER_LIBGIT2_TARGET PkgConfig::LIBGIT2)
+        endif()
+    endif()
 endif()
 
-pkg_check_modules(LIBGIT2 IMPORTED_TARGET libgit2)
-
-if(NOT LIBGIT2_FOUND)
-    message(FATAL_ERROR "libgit2 development files were not found. Install libgit2 (e.g. 'sudo apt-get install libgit2-dev' or 'brew install libgit2') and ensure pkg-config can locate it.")
+if(GITLEDGER_LIBGIT2_TARGET STREQUAL "")
+    message(FATAL_ERROR "libgit2 development files were not found. Install libgit2 and pkg-config (e.g. 'sudo apt-get install libgit2-dev pkg-config', 'brew install libgit2 pkg-config', or 'choco install libgit2 pkgconfiglite') and reconfigure.")
 endif()
 
-target_link_libraries(gitledger PUBLIC PkgConfig::LIBGIT2)
+target_link_libraries(gitledger PUBLIC ${GITLEDGER_LIBGIT2_TARGET})
 target_compile_definitions(gitledger PUBLIC GITLEDGER_HAVE_LIBGIT2=1)
 
 target_include_directories(gitledger
