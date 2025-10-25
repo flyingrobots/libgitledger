@@ -6,6 +6,21 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(GITLEDGER_VENDOR_LIBGIT2 "Build against a vendored libgit2 copy (placeholder)" OFF)
+option(GITLEDGER_WITH_CROARING "Enable CRoaring integration (placeholder)" OFF)
+option(GITLEDGER_WITH_BLAKE3 "Enable BLAKE3 support (placeholder)" OFF)
+set(GITLEDGER_WITH_LIBGIT2 "AUTO" CACHE STRING "Use libgit2 (values: AUTO, ON, OFF)")
+set_property(CACHE GITLEDGER_WITH_LIBGIT2 PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${GITLEDGER_WITH_LIBGIT2}" GITLEDGER_WITH_LIBGIT2_MODE)
+
+if(GITLEDGER_WITH_CROARING)
+    message(STATUS "CRoaring support is not implemented yet; continuing without it.")
+endif()
+
+if(GITLEDGER_WITH_BLAKE3)
+    message(STATUS "BLAKE3 support is not implemented yet; continuing without it.")
+endif()
+
 if(MSVC)
     set(PROJECT_WARNING_FLAGS /W4 /WX /we4244 /we4267 /we4456 /we4457 /we4458 /we4459)
 else()
@@ -31,6 +46,48 @@ set(LIBGITLEDGER_HEADERS
 add_library(gitledger STATIC ${LIBGITLEDGER_SOURCES} ${LIBGITLEDGER_HEADERS})
 target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
 target_compile_definitions(gitledger PRIVATE GITLEDGER_BUILD=1)
+
+if(GITLEDGER_VENDOR_LIBGIT2)
+    message(FATAL_ERROR "Vendored libgit2 support is not implemented yet.\n"
+                           "Install libgit2 on your system or rerun with -DGITLEDGER_VENDOR_LIBGIT2=OFF to continue.")
+endif()
+
+set(GITLEDGER_LIBGIT2_TARGET "")
+
+if(NOT GITLEDGER_WITH_LIBGIT2_MODE STREQUAL "OFF")
+    find_package(LibGit2 QUIET)
+    if(LibGit2_FOUND)
+        set(GITLEDGER_LIBGIT2_TARGET LibGit2::LibGit2)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(LIBGIT2 IMPORTED_TARGET libgit2)
+            if(LIBGIT2_FOUND)
+                set(GITLEDGER_LIBGIT2_TARGET PkgConfig::LIBGIT2)
+            endif()
+        endif()
+    endif()
+
+    if(GITLEDGER_LIBGIT2_TARGET STREQUAL "")
+        if(GITLEDGER_WITH_LIBGIT2_MODE STREQUAL "ON")
+            message(FATAL_ERROR "libgit2 development files were not found.\n"
+                               "Install libgit2 and pkg-config using one of:\n"
+                               "  sudo apt-get install libgit2-dev pkg-config\n"
+                               "  brew install libgit2 pkg-config\n"
+                               "  choco install libgit2 pkgconfiglite\n"
+                               "Then rerun CMake, or pass -DGITLEDGER_WITH_LIBGIT2=OFF to continue without libgit2.")
+        else()
+            message(STATUS "libgit2 not found; continuing without libgit2 integration."
+                           " Set -DGITLEDGER_WITH_LIBGIT2=ON after installing libgit2 to enable it.")
+        endif()
+    else()
+        message(STATUS "libgit2 dependency detected via ${GITLEDGER_LIBGIT2_TARGET}.")
+        target_link_libraries(gitledger PRIVATE ${GITLEDGER_LIBGIT2_TARGET})
+        target_compile_definitions(gitledger PRIVATE GITLEDGER_HAVE_LIBGIT2=1)
+    endif()
+else()
+    message(STATUS "libgit2 support disabled via -DGITLEDGER_WITH_LIBGIT2=OFF")
+endif()
 
 target_include_directories(gitledger
     PUBLIC

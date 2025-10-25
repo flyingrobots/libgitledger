@@ -91,6 +91,40 @@ make format       # apply clang-format in-place (runs on the host)
 make markdownlint # lint Markdown docs using markdownlint-cli
 ```
 
+## Dependencies
+
+`libgitledger` links against [`libgit2`](https://libgit2.org/). Ensure the development
+headers are available before configuring either build system:
+
+- **Debian/Ubuntu**
+
+  ```bash
+  sudo apt-get update
+  sudo apt-get install libgit2-dev pkg-config
+  ```
+
+- **macOS (Homebrew)**
+
+  ```bash
+  brew install libgit2 pkg-config
+  ```
+
+- **Windows (Chocolatey)**
+
+  ```powershell
+  choco install libgit2 pkgconfiglite
+  ```
+
+Optional knobs surface in both build systems:
+
+- CMake: `-DGITLEDGER_WITH_LIBGIT2=OFF` to configure without libgit2, (future)
+  `-DGITLEDGER_VENDOR_LIBGIT2=ON` for vendoring once implemented, plus
+  placeholders `-DGITLEDGER_WITH_CROARING=ON` and `-DGITLEDGER_WITH_BLAKE3=ON`.
+- Meson: `-Dvendor_libgit2=true`, `-Dwith_croaring=enabled`, and `-Dwith_blake3=enabled`.
+
+The CRoaring and BLAKE3 switches are stubs for future work and simply log that
+the integration is pending.
+
 ## Coding Standards
 
 - `.clang-format` defines the canonical formatting rules; run `make format` to apply them and

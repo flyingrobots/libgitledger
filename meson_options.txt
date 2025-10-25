@@ -1,3 +1,4 @@
+option('vendor_libgit2', type: 'boolean', value: false, description: 'Build against vendored libgit2 (placeholder)')
 option('with_libgit2', type: 'feature', value: 'auto', description: 'Enable libgit2 integration when available')
 option('with_croaring', type: 'feature', value: 'disabled', description: 'Enable CRoaring integration when available')
 option('with_blake3', type: 'feature', value: 'disabled', description: 'Enable BLAKE3 checksum support')
