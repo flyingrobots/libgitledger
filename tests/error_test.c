@@ -192,6 +192,7 @@ static void test_teardown_refusal_with_live_errors(void)
 
     /* First try to release the context should be refused because err is live. */
     int rc = gitledger_context_try_release(ctx);
+    (void) rc;
     assert(rc == 0);
     assert(gitledger_context_valid(ctx) == 1);
 
