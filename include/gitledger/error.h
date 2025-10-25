@@ -123,17 +123,19 @@ extern "C"
                                          gitledger_source_location_t location, const char* fmt,
                                          va_list args);
 
-    /* Macros capture caller location at the call-site. Require an explicit
-       format string for safety; pass "" when no message arguments are needed. */
-#define GITLEDGER_ERROR_CREATE(ctx, domain, code, fmt, ...)                                         \
-    gitledger_error_create_ctx_loc((ctx), (domain), (code),                                        \
-                                   (gitledger_source_location_t){__FILE__, __LINE__, __func__},    \
-                                   (fmt), ##__VA_ARGS__)
+    /* Macros capture caller location at the call-site. Callers must supply a
+       format string as the first variadic argument; pass "" when no message
+       arguments are needed. Using only __VA_ARGS__ avoids GNU-specific empty
+       varargs handling. */
+#define GITLEDGER_ERROR_CREATE(ctx, domain, code, ...)                                              \
+    gitledger_error_create_ctx_loc((ctx), (domain), (code),                                         \
+                                   (gitledger_source_location_t){__FILE__, __LINE__, __func__},     \
+                                   __VA_ARGS__)
 
-#define GITLEDGER_ERROR_WITH_CAUSE(ctx, domain, code, cause, fmt, ...)                              \
-    gitledger_error_with_cause_ctx_loc((ctx), (domain), (code), (cause),                           \
+#define GITLEDGER_ERROR_WITH_CAUSE(ctx, domain, code, cause, ...)                                   \
+    gitledger_error_with_cause_ctx_loc((ctx), (domain), (code), (cause),                            \
                                        (gitledger_source_location_t){__FILE__, __LINE__, __func__}, \
-                                       (fmt), ##__VA_ARGS__)
+                                       __VA_ARGS__)
 
     typedef bool (*gitledger_error_visitor_t)(const gitledger_error_t* err, void* userdata);
     GITLEDGER_API void gitledger_error_walk(const gitledger_error_t*  top,
