@@ -1,46 +1,30 @@
 #include "gitledger/error.h"
 #include "gitledger/context.h"
 
-#include <stdatomic.h>
+#include <limits.h>
 #include <stdarg.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../internal/context_internal.h"
 
-#define GITLEDGER_JSON_APPEND_LITERAL(writer_ptr, literal) \
-    writer_append((writer_ptr), (literal), sizeof(literal) - 1U)
+#define GITLEDGER_JSON_STATIC_STACK_DEPTH 16U
+#define GITLEDGER_JSON_ESCAPE_BUFFER_SIZE 7U
+#define GITLEDGER_JSON_ASCII_MIN_PRINTABLE 0x20U
+#define GITLEDGER_JSON_LINE_BUFFER_SIZE 32U
 
-static int gl_safe_vsnprintf(char* buffer, size_t size, const char* fmt, va_list args)
+typedef struct
 {
-    /* We rely on vsnprintf with explicit bounds; suppress analyzer false positives. */
-    // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-    return vsnprintf(buffer, size, fmt, args);
-}
-
-static int gl_safe_snprintf(char* buffer, size_t size, const char* fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-    int written = vsnprintf(buffer, size, fmt, args);
-    va_end(args);
-    return written;
-}
-
-static void gl_safe_memset(void* dst, int value, size_t size)
-{
-    // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-    memset(dst, value, size);
-}
-
-static void gl_safe_memcpy(void* dst, const void* src, size_t size)
-{
-    // NOLINTNEXTLINE(clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling)
-    memcpy(dst, src, size);
-}
-
+    char*  data;
+    size_t capacity;
+    size_t length;
+    size_t required;
+    bool   overflow;
+} gl_buf_t;
 
 typedef struct error_json_frame
 {
@@ -48,35 +32,107 @@ typedef struct error_json_frame
     int                      state;
 } error_json_frame_t;
 
-enum
+static int gl_safe_vsnprintf(char* buffer, size_t size, const char* fmt, va_list args)
 {
-    GL_JSON_STATIC_STACK_DEPTH  = 16,
-    GL_JSON_LINE_BUFFER_SIZE    = 16,
-    GL_JSON_ESCAPE_BUFFER_SIZE  = 7,
-    GL_JSON_ASCII_MIN_PRINTABLE = 0x20
-};
+    return vsnprintf(buffer, size, fmt, args);
+}
 
-typedef struct
+static int gl_safe_snprintf(char* buffer, size_t size, const char* fmt, ...)
 {
-    char*  cursor;
-    size_t remaining;
-    size_t total;
-} gl_json_writer_t;
+    va_list args;
+    va_start(args, fmt);
+    int written = gl_safe_vsnprintf(buffer, size, fmt, args);
+    va_end(args);
+    return written;
+}
 
-static gl_json_writer_t gl_json_writer_init(char* buffer, size_t size)
+static void gl_safe_memset(void* dst, int value, size_t size)
 {
-    gl_json_writer_t writer = {
-        .cursor    = (buffer && size) ? buffer : NULL,
-        .remaining = (buffer && size) ? size : 0U,
-        .total     = 0U
-    };
-    return writer;
+    memset(dst, value, size);
+}
+
+static void gl_safe_memcpy(void* dst, const void* src, size_t size)
+{
+    memcpy(dst, src, size);
+}
+
+static void gl_buf_init(gl_buf_t* buf, char* data, size_t capacity)
+{
+    buf->data     = data;
+    buf->capacity = (data && capacity) ? capacity : 0U;
+    buf->length   = 0U;
+    buf->required = 0U;
+    buf->overflow = false;
+    if (buf->capacity > 0U)
+        {
+            buf->data[0] = '\0';
+        }
+}
+
+static void gl_buf_append(gl_buf_t* buf, const char* data, size_t len)
+{
+    if (len == 0U)
+        {
+            return;
+        }
+
+    if (buf->required <= SIZE_MAX - len)
+        {
+            buf->required += len;
+        }
+    else
+        {
+            buf->required = SIZE_MAX;
+            buf->overflow = true;
+        }
+
+    if (buf->overflow || buf->capacity == 0U)
+        {
+            return;
+        }
+
+    size_t available = (buf->capacity > buf->length + 1U) ? (buf->capacity - buf->length - 1U) : 0U;
+    if (available < len)
+        {
+            if (available > 0U)
+                {
+                    gl_safe_memcpy(buf->data + buf->length, data, available);
+                    buf->length += available;
+                }
+            buf->overflow = true;
+            return;
+        }
+
+    gl_safe_memcpy(buf->data + buf->length, data, len);
+    buf->length += len;
+}
+
+static void gl_buf_putc(gl_buf_t* buf, char character)
+{
+    gl_buf_append(buf, &character, 1U);
+}
+
+static void gl_buf_append_literal(gl_buf_t* buf, const char* literal)
+{
+    gl_buf_append(buf, literal, strlen(literal));
+}
+
+static void gl_buf_finalize(gl_buf_t* buf)
+{
+    if (buf->capacity == 0U || !buf->data)
+        {
+            return;
+        }
+    size_t index     = (buf->length < buf->capacity) ? buf->length : buf->capacity - 1U;
+    buf->data[index] = '\0';
 }
 
 struct gitledger_error
 {
     gitledger_context_t*    ctx;
+    uint32_t                ctx_generation;
     atomic_uint             refcount;
+    gitledger_allocator_t   allocator; /* snapshot of allocator for safe frees */
     gitledger_domain_t      domain;
     gitledger_code_t        code;
     gitledger_error_flags_t flags;
@@ -92,28 +148,134 @@ static gitledger_error_flags_t default_flags(gitledger_domain_t domain, gitledge
 {
     switch (domain)
         {
-            case GL_DOMAIN_IO:
-                return GL_ERRFLAG_RETRYABLE;
-            case GL_DOMAIN_POLICY:
-            case GL_DOMAIN_TRUST:
-                return GL_ERRFLAG_PERMANENT;
-            default:
-                break;
+        case GL_DOMAIN_IO:
+            return GL_ERRFLAG_RETRYABLE;
+        case GL_DOMAIN_POLICY:
+        case GL_DOMAIN_TRUST:
+            return GL_ERRFLAG_PERMANENT;
+        default:
+            break;
         }
 
     switch (code)
         {
-            case GL_CODE_OOM:
-            case GL_CODE_IO_ERROR:
-                return GL_ERRFLAG_RETRYABLE;
-            case GL_CODE_POLICY_VIOLATION:
-            case GL_CODE_TRUST_VIOLATION:
-            case GL_CODE_INVALID_ARGUMENT:
-                return GL_ERRFLAG_PERMANENT;
-            default:
-                break;
+        case GL_CODE_OOM:
+        case GL_CODE_IO_ERROR:
+            return GL_ERRFLAG_RETRYABLE;
+        case GL_CODE_POLICY_VIOLATION:
+        case GL_CODE_TRUST_VIOLATION:
+        case GL_CODE_INVALID_ARGUMENT:
+            return GL_ERRFLAG_PERMANENT;
+        default:
+            break;
         }
     return GL_ERRFLAG_NONE;
+}
+
+static const char* domain_to_string(gitledger_domain_t domain)
+{
+    switch (domain)
+        {
+        case GL_DOMAIN_OK:
+            return "OK";
+        case GL_DOMAIN_GENERIC:
+            return "GENERIC";
+        case GL_DOMAIN_ALLOCATOR:
+            return "ALLOCATOR";
+        case GL_DOMAIN_GIT:
+            return "GIT";
+        case GL_DOMAIN_POLICY:
+            return "POLICY";
+        case GL_DOMAIN_TRUST:
+            return "TRUST";
+        case GL_DOMAIN_IO:
+            return "IO";
+        case GL_DOMAIN_CONFIG:
+            return "CONFIG";
+        }
+    return "UNKNOWN";
+}
+
+static const char* code_to_string(gitledger_code_t code)
+{
+    switch (code)
+        {
+        case GL_CODE_OK:
+            return "OK";
+        case GL_CODE_UNKNOWN:
+            return "UNKNOWN";
+        case GL_CODE_OOM:
+            return "OUT_OF_MEMORY";
+        case GL_CODE_INVALID_ARGUMENT:
+            return "INVALID_ARGUMENT";
+        case GL_CODE_NOT_FOUND:
+            return "NOT_FOUND";
+        case GL_CODE_CONFLICT:
+            return "CONFLICT";
+        case GL_CODE_PERMISSION_DENIED:
+            return "PERMISSION_DENIED";
+        case GL_CODE_POLICY_VIOLATION:
+            return "POLICY_VIOLATION";
+        case GL_CODE_TRUST_VIOLATION:
+            return "TRUST_VIOLATION";
+        case GL_CODE_IO_ERROR:
+            return "IO_ERROR";
+        case GL_CODE_DEPENDENCY_MISSING:
+            return "DEPENDENCY_MISSING";
+        }
+    return "UNKNOWN";
+}
+
+static void gl_json_escape(gl_buf_t* buf, const char* text)
+{
+    if (!text)
+        {
+            return;
+        }
+    for (const unsigned char* cursor = (const unsigned char*) text; *cursor; ++cursor)
+        {
+            char scratch[GITLEDGER_JSON_ESCAPE_BUFFER_SIZE] = {0};
+            switch (*cursor)
+                {
+                case '\\':
+                    gl_buf_append(buf, "\\\\", 2U);
+                    break;
+                case '\"':
+                    gl_buf_append(buf, "\\\"", 2U);
+                    break;
+                case '\b':
+                    gl_buf_append(buf, "\\b", 2U);
+                    break;
+                case '\f':
+                    gl_buf_append(buf, "\\f", 2U);
+                    break;
+                case '\n':
+                    gl_buf_append(buf, "\\n", 2U);
+                    break;
+                case '\r':
+                    gl_buf_append(buf, "\\r", 2U);
+                    break;
+                case '\t':
+                    gl_buf_append(buf, "\\t", 2U);
+                    break;
+                default:
+                    if (*cursor < GITLEDGER_JSON_ASCII_MIN_PRINTABLE)
+                        {
+                            int written =
+                                gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x", *cursor);
+                            if (written > 0)
+                                {
+                                    gl_buf_append(buf, scratch, (size_t) written);
+                                }
+                        }
+                    else
+                        {
+                            scratch[0] = (char) *cursor;
+                            gl_buf_append(buf, scratch, 1U);
+                        }
+                    break;
+                }
+        }
 }
 
 static char* duplicate_format(gitledger_context_t* ctx, const char* fmt, va_list args)
@@ -140,307 +302,255 @@ static char* duplicate_format(gitledger_context_t* ctx, const char* fmt, va_list
 
 static gitledger_error_t* allocate_error(gitledger_context_t* ctx)
 {
-    gitledger_error_t* err = (gitledger_error_t*) gitledger_context_alloc(ctx, sizeof(gitledger_error_t));
+    gitledger_error_t* err =
+        (gitledger_error_t*) gitledger_context_alloc(ctx, sizeof(gitledger_error_t));
     if (!err)
         {
             return NULL;
         }
     gl_safe_memset(err, 0, sizeof(*err));
-    err->ctx = ctx;
+    err->ctx            = ctx;
+    err->ctx_generation = gitledger_context_generation_snapshot_internal(ctx);
     atomic_init(&err->refcount, 1U);
+    const gitledger_allocator_t* pal = gitledger_context_allocator(ctx);
+    if (pal)
+        {
+            err->allocator = *pal; /* snapshot allocator for post-context teardown safety */
+        }
     return err;
 }
 
 static void free_error(gitledger_error_t* err)
 {
-    gitledger_context_t* ctx = err->ctx;
-    if (err->message)
+    gitledger_allocator_t allocator_snapshot = err->allocator;
+    if (allocator_snapshot.free)
         {
-            gitledger_context_free(ctx, err->message);
-        }
-    if (err->json_cache)
-        {
-            gitledger_context_free(ctx, err->json_cache);
-        }
-    gitledger_context_free(ctx, err);
-}
-
-static const char* domain_to_string(gitledger_domain_t domain)
-{
-    switch (domain)
-        {
-            case GL_DOMAIN_OK: return "OK";
-            case GL_DOMAIN_GENERIC: return "GENERIC";
-            case GL_DOMAIN_ALLOCATOR: return "ALLOCATOR";
-            case GL_DOMAIN_GIT: return "GIT";
-            case GL_DOMAIN_POLICY: return "POLICY";
-            case GL_DOMAIN_TRUST: return "TRUST";
-            case GL_DOMAIN_IO: return "IO";
-            case GL_DOMAIN_CONFIG: return "CONFIG";
-        }
-    return "UNKNOWN";
-}
-
-static const char* code_to_string(gitledger_code_t code)
-{
-    switch (code)
-        {
-            case GL_CODE_OK: return "OK";
-            case GL_CODE_UNKNOWN: return "UNKNOWN";
-            case GL_CODE_OOM: return "OUT_OF_MEMORY";
-            case GL_CODE_INVALID_ARGUMENT: return "INVALID_ARGUMENT";
-            case GL_CODE_NOT_FOUND: return "NOT_FOUND";
-            case GL_CODE_CONFLICT: return "CONFLICT";
-            case GL_CODE_PERMISSION_DENIED: return "PERMISSION_DENIED";
-            case GL_CODE_POLICY_VIOLATION: return "POLICY_VIOLATION";
-            case GL_CODE_TRUST_VIOLATION: return "TRUST_VIOLATION";
-            case GL_CODE_IO_ERROR: return "IO_ERROR";
-            case GL_CODE_DEPENDENCY_MISSING: return "DEPENDENCY_MISSING";
-        }
-    return "UNKNOWN";
-}
-
-static void writer_append(gl_json_writer_t* writer, const char* data, size_t len)
-{
-    if (writer->remaining > 1U && writer->cursor)
-        {
-            size_t copy = len;
-            if (copy >= writer->remaining)
+            if (err->json_cache)
                 {
-                    copy = writer->remaining - 1U;
+                    allocator_snapshot.free(allocator_snapshot.userdata, err->json_cache);
                 }
-            gl_safe_memcpy(writer->cursor, data, copy);
-            writer->cursor += copy;
-            writer->remaining -= copy;
-        }
-    writer->total += len;
-}
-
-static void writer_append_char(gl_json_writer_t* writer, char chr)
-{
-    writer_append(writer, &chr, 1U);
-}
-
-static void writer_append_escaped(gl_json_writer_t* writer, const char* text)
-{
-    for (const unsigned char* byte_ptr = (const unsigned char*) text; *byte_ptr; ++byte_ptr)
-        {
-            char        scratch[GL_JSON_ESCAPE_BUFFER_SIZE] = {0};
-            size_t      length  = 0U;
-            switch (*byte_ptr)
+            if (err->message)
                 {
-                    case '\\': scratch[0] = '\\'; scratch[1] = '\\'; length = 2U; break;
-                    case '\"': scratch[0] = '\\'; scratch[1] = '"'; length = 2U; break;
-                    case '\b': scratch[0] = '\\'; scratch[1] = 'b'; length = 2U; break;
-                    case '\f': scratch[0] = '\\'; scratch[1] = 'f'; length = 2U; break;
-                    case '\n': scratch[0] = '\\'; scratch[1] = 'n'; length = 2U; break;
-                    case '\r': scratch[0] = '\\'; scratch[1] = 'r'; length = 2U; break;
-                    case '\t': scratch[0] = '\\'; scratch[1] = 't'; length = 2U; break;
-                    default:
-                        if (*byte_ptr < GL_JSON_ASCII_MIN_PRINTABLE)
-                            {
-                                const int written =
-                                    gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x", *byte_ptr);
-                                if (written > 0 && written < (int) sizeof scratch)
-                                    {
-                                        length = (size_t) written;
-                                    }
-                                else
-                                    {
-                                        scratch[0] = '?';
-                                        length     = 1U;
-                                    }
-                            }
-                        else
-                            {
-                                scratch[0] = (char) *byte_ptr;
-                                length     = 1U;
-                            }
-                        break;
+                    allocator_snapshot.free(allocator_snapshot.userdata, err->message);
                 }
-            writer_append(writer, scratch, length);
+        }
+    err->ctx            = NULL;
+    err->ctx_generation = 0U;
+    if (allocator_snapshot.free)
+        {
+            allocator_snapshot.free(allocator_snapshot.userdata, err);
         }
 }
 
-static void write_flags_array(gl_json_writer_t* writer, gitledger_error_flags_t flags)
+/* Internal: called by context teardown to detach an error from its context. */
+void gitledger_error_detach_context_internal(gitledger_error_t* err)
 {
-    writer_append_char(writer, '[');
+    if (!err)
+        {
+            return;
+        }
+    err->ctx            = NULL;
+    err->ctx_generation = 0U;
+}
+
+static void write_flags_array(gl_buf_t* buf, gitledger_error_flags_t flags)
+{
+    gl_buf_putc(buf, '[');
     bool first = true;
+
     if ((flags & GL_ERRFLAG_RETRYABLE) != 0U)
         {
-            const char* name = "\"RETRYABLE\"";
             if (!first)
                 {
-                    writer_append_char(writer, ',');
+                    gl_buf_putc(buf, ',');
                 }
-            writer_append(writer, name, strlen(name));
+            gl_buf_append_literal(buf, "\"RETRYABLE\"");
             first = false;
         }
     if ((flags & GL_ERRFLAG_PERMANENT) != 0U)
         {
-            const char* name = "\"PERMANENT\"";
             if (!first)
                 {
-                    writer_append_char(writer, ',');
+                    gl_buf_putc(buf, ',');
                 }
-            writer_append(writer, name, strlen(name));
+            gl_buf_append_literal(buf, "\"PERMANENT\"");
             first = false;
         }
     if ((flags & GL_ERRFLAG_AUTH) != 0U)
         {
-            const char* name = "\"AUTH\"";
             if (!first)
                 {
-                    writer_append_char(writer, ',');
+                    gl_buf_putc(buf, ',');
                 }
-            writer_append(writer, name, strlen(name));
+            gl_buf_append_literal(buf, "\"AUTH\"");
         }
-    writer_append_char(writer, ']');
+    gl_buf_putc(buf, ']');
 }
 
-static void json_write_error_fields(gl_json_writer_t* writer, const gitledger_error_t* err)
+static void json_write_error_fields(gl_buf_t* buf, const gitledger_error_t* err)
 {
-    const char* domain = domain_to_string(err->domain);
-    GITLEDGER_JSON_APPEND_LITERAL(writer, "\"domain\":\"");
-    writer_append(writer, domain, strlen(domain));
-    writer_append_char(writer, '\"');
+    gl_buf_append_literal(buf, "\"domain\":\"");
+    gl_buf_append_literal(buf, domain_to_string(err->domain));
+    gl_buf_putc(buf, '"');
 
-    GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"code\":\"");
-    const char* code = code_to_string(err->code);
-    writer_append(writer, code, strlen(code));
-    writer_append_char(writer, '\"');
+    gl_buf_append_literal(buf, ",\"code\":\"");
+    gl_buf_append_literal(buf, code_to_string(err->code));
+    gl_buf_putc(buf, '"');
 
-    GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"flags\":");
-    write_flags_array(writer, err->flags);
+    gl_buf_append_literal(buf, ",\"flags\":");
+    write_flags_array(buf, err->flags);
 
-    GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"message\":\"");
-    writer_append_escaped(writer, err->message ? err->message : "");
-    writer_append_char(writer, '\"');
+    gl_buf_append_literal(buf, ",\"message\":\"");
+    if (err->message)
+        {
+            gl_json_escape(buf, err->message);
+        }
+    gl_buf_putc(buf, '"');
 
     if (err->file)
         {
-            GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"file\":\"");
-            writer_append_escaped(writer, err->file);
-            writer_append_char(writer, '\"');
-            GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"line\":");
-            char linebuf[GL_JSON_LINE_BUFFER_SIZE];
-            const int length = gl_safe_snprintf(linebuf, sizeof linebuf, "%d", err->line);
-            if (length > 0)
+            gl_buf_append_literal(buf, ",\"file\":\"");
+            gl_json_escape(buf, err->file);
+            gl_buf_putc(buf, '"');
+
+            gl_buf_append_literal(buf, ",\"line\":");
+            char number[GITLEDGER_JSON_LINE_BUFFER_SIZE];
+            int  written = gl_safe_snprintf(number, sizeof number, "%d", err->line);
+            if (written > 0)
                 {
-                    writer_append(writer, linebuf, (size_t) length);
+                    gl_buf_append(buf, number, (size_t) written);
                 }
         }
 
     if (err->func)
         {
-            GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"func\":\"");
-            writer_append_escaped(writer, err->func);
-            writer_append_char(writer, '\"');
+            gl_buf_append_literal(buf, ",\"func\":\"");
+            gl_json_escape(buf, err->func);
+            gl_buf_putc(buf, '"');
         }
 }
 
-static bool json_push_cause_frame(error_json_frame_t* stack,
-                                  size_t*              stack_size,
-                                  size_t               capacity,
+static bool json_push_cause_frame(error_json_frame_t* stack, size_t capacity, size_t* stack_size,
                                   const gitledger_error_t* cause)
 {
     if (!cause || *stack_size >= capacity)
         {
             return false;
         }
-    stack[*stack_size] = (error_json_frame_t){ cause, 0 };
-    ++(*stack_size);
+    stack[*stack_size].err   = cause;
+    stack[*stack_size].state = 0;
+    (*stack_size)++;
     return true;
 }
 
-static size_t json_error_chain_depth(const gitledger_error_t* err)
+static bool json_emit_frame(gl_buf_t* buf, error_json_frame_t* stack, size_t* stack_size,
+                            size_t capacity, bool* truncated)
 {
-    size_t depth = 0;
-    for (const gitledger_error_t* cur = err; cur; cur = cur->cause)
+    error_json_frame_t*      frame   = &stack[*stack_size - 1U];
+    const gitledger_error_t* current = frame->err;
+    if (frame->state == 0)
+        {
+            gl_buf_putc(buf, '{');
+            json_write_error_fields(buf, current);
+            frame->state = 1;
+            if (json_push_cause_frame(stack, capacity, stack_size, current->cause))
+                {
+                    gl_buf_append_literal(buf, ",\"cause\":");
+                    return true;
+                }
+            if (current->cause)
+                {
+                    *truncated = true;
+                    gl_buf_append_literal(buf, ",\"cause\":{\"truncated\":true}");
+                }
+        }
+
+    gl_buf_putc(buf, '}');
+    (*stack_size)--;
+    return false;
+}
+
+static size_t json_measure_depth(const gitledger_error_t* err, bool* truncated)
+{
+    size_t                   depth = 0U;
+    const gitledger_error_t* iter  = err;
+    while (iter && depth < GITLEDGER_ERROR_MAX_DEPTH)
         {
             ++depth;
+            iter = iter->cause;
+        }
+    if (iter && truncated)
+        {
+            *truncated = true;
         }
     return depth;
 }
 
-static error_json_frame_t* json_acquire_stack(size_t depth,
-                                              error_json_frame_t* static_storage,
-                                              size_t* capacity,
-                                              bool* use_heap)
+static error_json_frame_t* json_acquire_stack(size_t depth, error_json_frame_t* storage,
+                                              size_t* capacity, int* use_heap_flag, bool* truncated)
 {
-    *capacity = GL_JSON_STATIC_STACK_DEPTH;
-    *use_heap = false;
-    if (depth <= *capacity)
+    error_json_frame_t* stack = storage;
+    *capacity                 = GITLEDGER_JSON_STATIC_STACK_DEPTH;
+    *use_heap_flag            = 0;
+    if (depth > *capacity)
         {
-            return static_storage;
+            stack = (error_json_frame_t*) malloc(depth * sizeof(*stack));
+            if (stack)
+                {
+                    *capacity      = depth;
+                    *use_heap_flag = 1;
+                }
+            else
+                {
+                    stack     = storage;
+                    *capacity = GITLEDGER_JSON_STATIC_STACK_DEPTH;
+                    if (truncated)
+                        {
+                            *truncated = true;
+                        }
+                }
         }
-
-    error_json_frame_t* heap = (error_json_frame_t*) malloc(sizeof(error_json_frame_t) * depth);
-    if (heap)
-        {
-            *capacity = depth;
-            *use_heap = true;
-            return heap;
-        }
-    return static_storage;
+    return stack;
 }
 
-static void json_release_stack(error_json_frame_t* stack, bool use_heap)
+static void json_write_error(gl_buf_t* buf, const gitledger_error_t* err, bool* truncated)
 {
+    bool   truncated_flag = false;
+    size_t measured_depth = json_measure_depth(err, &truncated_flag);
+
+    error_json_frame_t  stack_static[GITLEDGER_JSON_STATIC_STACK_DEPTH];
+    size_t              capacity      = 0U;
+    int                 use_heap_flag = 0;
+    error_json_frame_t* stack         = json_acquire_stack(measured_depth, stack_static, &capacity,
+                                                           &use_heap_flag, &truncated_flag);
+
+    const bool use_heap = use_heap_flag != 0;
+
+    size_t stack_size = 0U;
+    if (err)
+        {
+            stack[0].err   = err;
+            stack[0].state = 0;
+            stack_size     = 1U;
+        }
+
+    while (stack_size > 0U)
+        {
+            if (json_emit_frame(buf, stack, &stack_size, capacity, &truncated_flag))
+                {
+                    continue;
+                }
+        }
+
     if (use_heap)
         {
             free(stack);
         }
-}
 
-static void json_write_error(gl_json_writer_t* writer, const gitledger_error_t* err)
-{
-    const size_t depth = json_error_chain_depth(err);
-    error_json_frame_t stack_static[GL_JSON_STATIC_STACK_DEPTH];
-    size_t capacity = 0;
-    bool   use_heap = false;
-    error_json_frame_t* stack = json_acquire_stack(depth, stack_static, &capacity, &use_heap);
-
-    size_t stack_size = 0;
-    if (err)
+    if (truncated)
         {
-            stack[stack_size++] = (error_json_frame_t){ err, 0 };
+            *truncated = truncated_flag;
         }
-
-    while (stack_size > 0)
-        {
-            error_json_frame_t* frame = &stack[stack_size - 1];
-            const gitledger_error_t* cur = frame->err;
-
-            if (frame->state == 0)
-                {
-                    writer_append_char(writer, '{');
-
-                    json_write_error_fields(writer, cur);
-
-                    frame->state = 1;
-                    if (cur->cause)
-                        {
-                            if (json_push_cause_frame(stack, &stack_size, capacity, cur->cause))
-                                {
-                                    GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"cause\":");
-                                    continue;
-                                }
-                            GITLEDGER_JSON_APPEND_LITERAL(writer, ",\"cause\":{\"truncated\":true}");
-                        }
-
-                }
-
-            writer_append_char(writer, '}');
-            --stack_size;
-        }
-
-    json_release_stack(stack, use_heap);
-}
-
-gitledger_error_flags_t gitledger_error_flags(const gitledger_error_t* err)
-{
-    return err ? err->flags : GL_ERRFLAG_NONE;
 }
 
 gitledger_domain_t gitledger_error_domain(const gitledger_error_t* err)
@@ -453,17 +563,14 @@ gitledger_code_t gitledger_error_code(const gitledger_error_t* err)
     return err ? err->code : GL_CODE_UNKNOWN;
 }
 
+gitledger_error_flags_t gitledger_error_flags(const gitledger_error_t* err)
+{
+    return err ? err->flags : GL_ERRFLAG_NONE;
+}
+
 const char* gitledger_error_message(const gitledger_error_t* err)
 {
-    if (!err)
-        {
-            return "";
-        }
-    if (!err->message)
-        {
-            return "";
-        }
-    return err->message;
+    return (err && err->message) ? err->message : "";
 }
 
 const gitledger_error_t* gitledger_error_cause(const gitledger_error_t* err)
@@ -486,6 +593,64 @@ const char* gitledger_error_func(const gitledger_error_t* err)
     return err ? err->func : NULL;
 }
 
+const char* gitledger_domain_name(gitledger_domain_t domain)
+{
+    return domain_to_string(domain);
+}
+
+const char* gitledger_code_name(gitledger_code_t code)
+{
+    return code_to_string(code);
+}
+
+size_t gitledger_error_flags_format(gitledger_error_flags_t flags, char* buf, size_t size)
+{
+    const char* names[3];
+    size_t      count = 0U;
+    if ((flags & GL_ERRFLAG_RETRYABLE) != 0U)
+        {
+            names[count++] = "RETRYABLE";
+        }
+    if ((flags & GL_ERRFLAG_PERMANENT) != 0U)
+        {
+            names[count++] = "PERMANENT";
+        }
+    if ((flags & GL_ERRFLAG_AUTH) != 0U)
+        {
+            names[count++] = "AUTH";
+        }
+
+    size_t required = 0U;
+    for (size_t i = 0; i < count; ++i)
+        {
+            size_t part = strlen(names[i]);
+            if (required > 0U)
+                {
+                    ++required; /* separator */
+                }
+            required += part;
+        }
+
+    if (buf && size > 0U)
+        {
+            size_t written = 0U;
+            for (size_t i = 0; i < count; ++i)
+                {
+                    if (written > 0U && written < size - 1U)
+                        {
+                            buf[written++] = '|';
+                        }
+                    const char* name = names[i];
+                    while (*name && written < size - 1U)
+                        {
+                            buf[written++] = *name++;
+                        }
+                }
+            buf[(written < size) ? written : size - 1U] = '\0';
+        }
+    return required;
+}
+
 void gitledger_error_retain(gitledger_error_t* err)
 {
     if (err)
@@ -501,9 +666,13 @@ void gitledger_error_release(gitledger_error_t* err)
         {
             if (atomic_fetch_sub_explicit(&current->refcount, 1U, memory_order_acq_rel) == 1U)
                 {
-                    gitledger_error_t* next = current->cause;
-                    current->cause          = NULL;
-                    gitledger_context_untrack_error_internal(current->ctx, current);
+                    gitledger_context_t* ctx  = current->ctx;
+                    gitledger_error_t*   next = current->cause;
+                    if (ctx)
+                        {
+                            gitledger_context_untrack_error_internal(ctx, current);
+                        }
+                    current->cause = NULL;
                     free_error(current);
                     current = next;
                     continue;
@@ -512,14 +681,17 @@ void gitledger_error_release(gitledger_error_t* err)
         }
 }
 
-static gitledger_error_t* create_error_internal(gitledger_context_t*     ctx,
-                                                gitledger_domain_t       domain,
-                                                gitledger_code_t         code,
-                                                const gitledger_error_t* cause,
+static gitledger_error_t* create_error_internal(gitledger_context_t* ctx, gitledger_domain_t domain,
+                                                gitledger_code_t            code,
+                                                const gitledger_error_t*    cause,
                                                 gitledger_source_location_t location,
-                                                const char*              fmt,
-                                                va_list                  args)
+                                                const char* fmt, va_list args)
 {
+    if (!gitledger_context_is_valid_internal(ctx))
+        {
+            return NULL;
+        }
+
     gitledger_error_t* err = allocate_error(ctx);
     if (!err)
         {
@@ -553,69 +725,64 @@ static gitledger_error_t* create_error_internal(gitledger_context_t*     ctx,
     return err;
 }
 
-gitledger_error_t* gitledger_error_create_ctx_loc_v(gitledger_context_t*     ctx,
-                                                    gitledger_domain_t       domain,
-                                                    gitledger_code_t         code,
+gitledger_error_t* gitledger_error_create_ctx_loc_v(gitledger_context_t*        ctx,
+                                                    gitledger_domain_t          domain,
+                                                    gitledger_code_t            code,
                                                     gitledger_source_location_t location,
-                                                    const char*              fmt,
-                                                    va_list                  args)
+                                                    const char* fmt, va_list args)
 {
     return create_error_internal(ctx, domain, code, NULL, location, fmt ? fmt : "", args);
 }
 
 gitledger_error_t* gitledger_error_create_ctx_loc(gitledger_context_t* ctx,
-                                                  gitledger_domain_t    domain,
-                                                  gitledger_code_t      code,
+                                                  gitledger_domain_t domain, gitledger_code_t code,
                                                   gitledger_source_location_t location,
-                                                  const char*           fmt,
-                                                  ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    gitledger_error_t* err = gitledger_error_create_ctx_loc_v(ctx, domain, code, location, fmt, args);
-    va_end(args);
-    return err;
-}
-
-gitledger_error_t* gitledger_error_with_cause_ctx_loc_v(gitledger_context_t*     ctx,
-                                                        gitledger_domain_t       domain,
-                                                        gitledger_code_t         code,
-                                                        const gitledger_error_t* cause,
-                                                        gitledger_source_location_t location,
-                                                        const char*              fmt,
-                                                        va_list                  args)
-{
-    return create_error_internal(ctx, domain, code, cause, location, fmt ? fmt : "", args);
-}
-
-gitledger_error_t* gitledger_error_with_cause_ctx_loc(gitledger_context_t*     ctx,
-                                                      gitledger_domain_t       domain,
-                                                      gitledger_code_t         code,
-                                                      const gitledger_error_t* cause,
-                                                      gitledger_source_location_t location,
-                                                      const char*              fmt,
-                                                      ...)
+                                                  const char*                 fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
     gitledger_error_t* err =
-        gitledger_error_with_cause_ctx_loc_v(ctx, domain, code, cause, location, fmt, args);
+        gitledger_error_create_ctx_loc_v(ctx, domain, code, location, fmt ? fmt : "", args);
     va_end(args);
     return err;
 }
 
-void gitledger_error_walk(const gitledger_error_t* top,
-                          gitledger_error_visitor_t visitor,
-                          void*                     userdata)
+gitledger_error_t* gitledger_error_with_cause_ctx_loc_v(gitledger_context_t*        ctx,
+                                                        gitledger_domain_t          domain,
+                                                        gitledger_code_t            code,
+                                                        const gitledger_error_t*    cause,
+                                                        gitledger_source_location_t location,
+                                                        const char* fmt, va_list args)
+{
+    return create_error_internal(ctx, domain, code, cause, location, fmt ? fmt : "", args);
+}
+
+gitledger_error_t*
+gitledger_error_with_cause_ctx_loc(gitledger_context_t* ctx, gitledger_domain_t domain,
+                                   gitledger_code_t code, const gitledger_error_t* cause,
+                                   gitledger_source_location_t location, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    gitledger_error_t* err = gitledger_error_with_cause_ctx_loc_v(ctx, domain, code, cause,
+                                                                  location, fmt ? fmt : "", args);
+    va_end(args);
+    return err;
+}
+
+void gitledger_error_walk(const gitledger_error_t* top, gitledger_error_visitor_t visitor,
+                          void* userdata)
 {
     const gitledger_error_t* current = top;
-    while (current)
+    size_t                   depth   = 0U;
+    while (current && depth < GITLEDGER_ERROR_MAX_DEPTH)
         {
             if (!visitor(current, userdata))
                 {
                     return;
                 }
             current = current->cause;
+            ++depth;
         }
 }
 
@@ -623,29 +790,45 @@ size_t gitledger_error_render_json(const gitledger_error_t* err, char* buf, size
 {
     if (!err)
         {
-            if (buf && size)
+            if (buf && size > 0U)
                 {
                     buf[0] = '\0';
                 }
-            return 1;
+            return 1U;
         }
 
-    gl_json_writer_t writer = gl_json_writer_init(buf, size);
-    json_write_error(&writer, err);
+    gl_buf_t builder;
+    gl_buf_init(&builder, buf, size);
 
-    if (buf && size)
+    bool truncated = false;
+    json_write_error(&builder, err, &truncated);
+    gl_buf_finalize(&builder);
+
+    (void) truncated;
+    if (builder.required == SIZE_MAX)
         {
-            if (writer.remaining == 0U)
-                {
-                    buf[size - 1U] = '\0';
-                }
-            else if (writer.cursor)
-                {
-                    *writer.cursor = '\0';
-                }
+            return SIZE_MAX;
+        }
+    return builder.required + 1U;
+}
+
+static void ensure_json_cache_current(gitledger_error_t* err)
+{
+    if (!err->ctx)
+        {
+            return;
         }
 
-    return writer.total + 1U;
+    uint32_t snapshot = gitledger_context_generation_snapshot_internal(err->ctx);
+    if (err->ctx_generation != snapshot)
+        {
+            if (err->json_cache)
+                {
+                    gitledger_context_free(err->ctx, err->json_cache);
+                    err->json_cache = NULL;
+                }
+            err->ctx_generation = snapshot;
+        }
 }
 
 const char* gitledger_error_json(gitledger_error_t* err)
@@ -654,22 +837,60 @@ const char* gitledger_error_json(gitledger_error_t* err)
         {
             return "{}";
         }
-    if (!err->ctx)
-        {
-            return "{}";
-        }
+
+    ensure_json_cache_current(err);
+
     if (err->json_cache)
         {
             return err->json_cache;
         }
 
-    size_t needed = gitledger_error_render_json(err, NULL, 0);
-    char*  buf    = (char*) gitledger_context_alloc(err->ctx, needed);
-    if (!buf)
+    if (!err->ctx)
         {
             return "{}";
         }
-    gitledger_error_render_json(err, buf, needed);
-    err->json_cache = buf;
-    return buf;
+
+    size_t required = gitledger_error_render_json(err, NULL, 0U);
+    char*  buffer   = (char*) gitledger_context_alloc(err->ctx, required);
+    if (!buffer)
+        {
+            return "{}";
+        }
+    gitledger_error_render_json(err, buffer, required);
+    err->json_cache = buffer;
+    return err->json_cache;
+}
+
+char* gitledger_error_json_copy(gitledger_context_t* ctx, gitledger_error_t* err)
+{
+    if (!ctx || !gitledger_context_is_valid_internal(ctx))
+        {
+            return NULL;
+        }
+    const char* json = gitledger_error_json(err);
+    size_t      len  = strlen(json) + 1U;
+    char*       copy = (char*) gitledger_context_alloc(ctx, len);
+    if (!copy)
+        {
+            return NULL;
+        }
+    gl_safe_memcpy(copy, json, len);
+    return copy;
+}
+
+char* gitledger_error_message_copy(gitledger_context_t* ctx, const gitledger_error_t* err)
+{
+    if (!ctx || !err || !gitledger_context_is_valid_internal(ctx))
+        {
+            return NULL;
+        }
+    const char* message = gitledger_error_message(err);
+    size_t      len     = strlen(message) + 1U;
+    char*       copy    = (char*) gitledger_context_alloc(ctx, len);
+    if (!copy)
+        {
+            return NULL;
+        }
+    gl_safe_memcpy(copy, message, len);
+    return copy;
 }

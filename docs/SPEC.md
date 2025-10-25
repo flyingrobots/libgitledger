@@ -786,10 +786,13 @@ Default guidance per domain/code:
 | `GL_DOMAIN_IO` | `GL_CODE_IO_ERROR` | `RETRYABLE` | Retry with backoff. |
 
 `gitledger_error_render_json` returns the exact byte count (including the terminating NUL) required
-to encode the full causal chain as deterministic JSON. The renderer is iterative and guards against
-stack overflow; if the chain exceeds its on-stack scratch depth the output flags truncation instead
-of recursing. `gitledger_error_json` memoises this JSON in a context-owned buffer so repeated logging
-does not re-render. Both helpers honour the caller’s allocator and never leak references.
+to encode the full causal chain as deterministic JSON. Rendering is iterative, capped by
+`GITLEDGER_ERROR_MAX_DEPTH`, and emits `"truncated":true` when the chain exceeds that limit.
+`gitledger_error_json` memoises the JSON in a context-owned scratch buffer so repeated logging does not
+re-render; `gitledger_error_json_copy` duplicates it for callers that need the data to outlive the
+context. Messages are treated the same way via `gitledger_error_message_copy`. Domain / code / flag
+strings are available through `gitledger_domain_name`, `gitledger_code_name`, and
+`gitledger_error_flags_format` for bindings that want symbolic names.
 
 Errors are reference counted; contexts track all outstanding errors and free them during teardown.
 `gitledger_error_release` descends iteratively (no recursion) so deeply nested causal stacks cannot

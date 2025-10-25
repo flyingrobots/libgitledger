@@ -23,10 +23,14 @@ set(LIBGITLEDGER_SOURCES
 set(LIBGITLEDGER_HEADERS
     libgitledger/include/gitledger/gitledger.h
     include/libgitledger/version.h
+    include/gitledger/context.h
+    include/gitledger/error.h
+    include/gitledger/export.h
 )
 
 add_library(gitledger STATIC ${LIBGITLEDGER_SOURCES} ${LIBGITLEDGER_HEADERS})
 target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
+target_compile_definitions(gitledger PRIVATE GITLEDGER_BUILD=1)
 
 target_include_directories(gitledger
     PUBLIC

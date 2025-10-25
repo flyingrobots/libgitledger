@@ -1,6 +1,6 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
-        host-format-check host-tidy host-lint \
+        host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
         activity-validate log
 
 all: both
@@ -9,6 +9,7 @@ test: test-both
 
 CLANG_FORMAT ?= clang-format
 CLANG_TIDY ?= clang-tidy
+CLANG_ANALYZER ?= scan-build
 MARKDOWNLINT ?= npx --yes markdownlint-cli
 MARKDOWNLINT_ARGS ?= --config .markdownlint.yaml
 
@@ -120,6 +121,34 @@ host-tidy:
 tidy-build:
 	tools/lint/run_clang_tidy.sh $(CLANG_TIDY)
 
+sanitizers:
+	@$(DISPATCH) sanitizers
+
+host-sanitizers:
+	$(HOST_GUARD)
+	cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=17 -DCMAKE_C_STANDARD_REQUIRED=ON -DCMAKE_C_FLAGS="-fsanitize=address,undefined" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+	cmake --build build-asan
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 ctest --test-dir build-asan --output-on-failure; \
+	else \
+		ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 ctest --test-dir build-asan --output-on-failure; \
+	fi
+	cmake -S . -B build-tsan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=17 -DCMAKE_C_STANDARD_REQUIRED=ON -DCMAKE_C_FLAGS="-fsanitize=thread" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+	cmake --build build-tsan
+	TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build-tsan --output-on-failure
+
+analyze:
+	@$(DISPATCH) analyze
+
+host-analyze:
+	$(HOST_GUARD)
+	@if ! command -v $(CLANG_ANALYZER) >/dev/null 2>&1; then \
+		echo "scan-build (clang analyzer) is required for host-analyze"; \
+		exit 1; \
+	fi
+	cmake -S . -B build-analyze -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=17 -DCMAKE_C_STANDARD_REQUIRED=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	$(CLANG_ANALYZER) --status-bugs cmake --build build-analyze
+
 markdownlint:
 	@files="$(shell git ls-files '*.md')"; if [ -z "$$files" ]; then echo "markdownlint: no markdown files found"; else $(MARKDOWNLINT) $(MARKDOWNLINT_ARGS) $$files; fi
 
@@ -130,4 +159,4 @@ log:
 	@tools/log_activity_dispatch.sh
 
 clean:
-	rm -rf build build-debug build-release build-tidy meson-debug meson-release meson-* compile_commands.json
+	rm -rf build build-debug build-release build-tidy build-asan build-tsan build-analyze meson-debug meson-release meson-* compile_commands.json

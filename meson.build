@@ -16,6 +16,7 @@ libgitledger = static_library(
   'gitledger',
   lib_sources,
   include_directories: include_dir,
+  c_args: ['-DGITLEDGER_BUILD'],
 )
 
 tests_version = executable(
