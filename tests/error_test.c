@@ -5,7 +5,6 @@
 static void test_teardown_refusal_with_live_errors(void);
 #endif
 
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

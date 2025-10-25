@@ -267,8 +267,8 @@ static void gl_json_escape(gl_buf_t* buf, const char* text)
                     if (*cursor < GITLEDGER_JSON_ASCII_MIN_PRINTABLE)
                         {
                             /* snprintf ensures bounds; only append when it produced output. */
-                            int written = gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x",
-                                                           *cursor);
+                            int written =
+                                gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x", *cursor);
                             if (written > 0)
                                 {
                                     gl_buf_append(buf, scratch, (size_t) written);

@@ -128,8 +128,7 @@ static void context_debug_log_live_errors(size_t live_count)
     size_t length        = 0U;
     int    written_chars = snprintf(
         buf, sizeof buf,
-        "gitledger_context_destroy: %zu live error(s) at context teardown (leaked)\n",
-        live_count);
+        "gitledger_context_destroy: %zu live error(s) at context teardown (leaked)\n", live_count);
     if (written_chars < 0)
         {
             const char* fallback =
