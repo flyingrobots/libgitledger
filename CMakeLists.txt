@@ -6,6 +6,18 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(GITLEDGER_VENDOR_LIBGIT2 "Build against a vendored libgit2 copy (placeholder)" OFF)
+option(GITLEDGER_WITH_CROARING "Enable CRoaring integration (placeholder)" OFF)
+option(GITLEDGER_WITH_BLAKE3 "Enable BLAKE3 support (placeholder)" OFF)
+
+if(GITLEDGER_WITH_CROARING)
+    message(STATUS "CRoaring support is not implemented yet; continuing without it.")
+endif()
+
+if(GITLEDGER_WITH_BLAKE3)
+    message(STATUS "BLAKE3 support is not implemented yet; continuing without it.")
+endif()
+
 if(MSVC)
     set(PROJECT_WARNING_FLAGS /W4 /WX /we4244 /we4267 /we4456 /we4457 /we4458 /we4459)
 else()
@@ -25,6 +37,20 @@ set(LIBGITLEDGER_HEADERS
 
 add_library(gitledger STATIC ${LIBGITLEDGER_SOURCES} ${LIBGITLEDGER_HEADERS})
 target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
+
+if(GITLEDGER_VENDOR_LIBGIT2)
+    message(FATAL_ERROR "Vendored libgit2 support is not implemented yet. Install libgit2 or configure without -DGITLEDGER_VENDOR_LIBGIT2=ON.")
+endif()
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBGIT2 IMPORTED_TARGET libgit2)
+
+if(NOT LIBGIT2_FOUND)
+    message(FATAL_ERROR "libgit2 development files were not found. Install libgit2 (e.g. 'sudo apt-get install libgit2-dev' or 'brew install libgit2') and ensure pkg-config can locate it.")
+endif()
+
+target_link_libraries(gitledger PUBLIC PkgConfig::LIBGIT2)
+target_compile_definitions(gitledger PUBLIC GITLEDGER_HAVE_LIBGIT2=1)
 
 target_include_directories(gitledger
     PUBLIC
