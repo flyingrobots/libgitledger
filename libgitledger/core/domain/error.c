@@ -138,14 +138,14 @@ struct gitledger_error
     gitledger_error_flags_t flags;
     char*                   message;
 #if __STDC_VERSION__ >= 201112L
-    _Atomic(void*)          json_cache; /* published via CAS; freed via atomic exchange */
+    _Atomic(void*) json_cache; /* published via CAS; freed via atomic exchange */
 #else
-    void*                   json_cache; /* non-atomic fallback under C99 */
+    void* json_cache; /* non-atomic fallback under C99 */
 #endif
-    gitledger_error_t*      cause;
-    const char*             file;
-    const char*             func;
-    int                     line;
+    gitledger_error_t* cause;
+    const char*        file;
+    const char*        func;
+    int                line;
 };
 
 static gitledger_error_flags_t default_flags(gitledger_domain_t domain, gitledger_code_t code)
@@ -341,8 +341,8 @@ static void free_error(gitledger_error_t* err)
 #if __STDC_VERSION__ >= 201112L
             cache_ptr = atomic_exchange(&err->json_cache, NULL);
 #else
-            cache_ptr        = err->json_cache;
-            err->json_cache  = NULL;
+            cache_ptr       = err->json_cache;
+            err->json_cache = NULL;
 #endif
             if (cache_ptr)
                 {
