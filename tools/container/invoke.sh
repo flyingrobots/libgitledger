@@ -28,10 +28,10 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-WORK_ROOT="$(python3 - <<'PY'
+WORK_ROOT="$(python3 - "$WORK_ROOT_RAW" <<'PY'
 import os
 import sys
-work_root = os.environ["WORK_ROOT_RAW"]
+work_root = sys.argv[1]
 resolved = os.path.abspath(work_root)
 print(resolved)
 PY
@@ -47,11 +47,11 @@ if [[ "${WORK_ROOT}" == "/" ]]; then
     exit 1
 fi
 
-TARGET_DIR="$(python3 - <<'PY'
+TARGET_DIR="$(python3 - "$WORK_ROOT" "$JOB_NAME" <<'PY'
 import os
 import sys
-base = os.environ["WORK_ROOT"]
-job = os.environ["JOB_NAME"]
+base = sys.argv[1]
+job = sys.argv[2]
 print(os.path.abspath(os.path.join(base, job)))
 PY
 )"
