@@ -137,7 +137,7 @@ struct gitledger_error
     gitledger_code_t        code;
     gitledger_error_flags_t flags;
     char*                   message;
-    atomic_uintptr_t        json_cache; /* published via CAS; freed via atomic exchange */
+    _Atomic(void*)          json_cache; /* published via CAS; freed via atomic exchange */
     gitledger_error_t*      cause;
     const char*             file;
     const char*             func;
@@ -333,10 +333,10 @@ static void free_error(gitledger_error_t* err)
     if (allocator_snapshot.free)
         {
             /* Single-owner free via atomic exchange to avoid double free. */
-            uintptr_t cache_ptr = atomic_exchange(&err->json_cache, (uintptr_t) 0);
+            uintptr_t cache_ptr = (uintptr_t) atomic_exchange(&err->json_cache, NULL);
             if (cache_ptr)
                 {
-                    allocator_snapshot.free(allocator_snapshot.userdata, (void*) cache_ptr);
+                    allocator_snapshot.free(allocator_snapshot.userdata, (void*)cache_ptr);
                 }
             if (err->message)
                 {
@@ -832,7 +832,7 @@ static void ensure_json_cache_current(gitledger_error_t* err)
     if (err->ctx_generation != snapshot)
         {
             /* Invalidate cached JSON atomically so only one thread frees it. */
-            uintptr_t cache_ptr = atomic_exchange(&err->json_cache, (uintptr_t) 0);
+            uintptr_t cache_ptr = (uintptr_t) atomic_exchange(&err->json_cache, NULL);
             if (cache_ptr)
                 {
                     gitledger_context_free(err->ctx, (void*) cache_ptr);
@@ -850,7 +850,7 @@ const char* gitledger_error_json(gitledger_error_t* err)
 
     ensure_json_cache_current(err);
 
-    uintptr_t cached_ptr = atomic_load(&err->json_cache);
+    void* cached_ptr = atomic_load(&err->json_cache);
     if (cached_ptr)
         {
             return (const char*) cached_ptr;
@@ -868,8 +868,8 @@ const char* gitledger_error_json(gitledger_error_t* err)
             return "{}";
         }
     gitledger_error_render_json(err, buffer, required);
-    uintptr_t expected = 0;
-    if (atomic_compare_exchange_strong(&err->json_cache, &expected, (uintptr_t) buffer))
+    void* expected = NULL;
+    if (atomic_compare_exchange_strong(&err->json_cache, &expected, buffer))
         {
             return buffer;
         }
