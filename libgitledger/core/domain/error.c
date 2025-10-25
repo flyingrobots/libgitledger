@@ -333,10 +333,10 @@ static void free_error(gitledger_error_t* err)
     if (allocator_snapshot.free)
         {
             /* Single-owner free via atomic exchange to avoid double free. */
-            uintptr_t cache_ptr = (uintptr_t) atomic_exchange(&err->json_cache, NULL);
+            void* cache_ptr = atomic_exchange(&err->json_cache, NULL);
             if (cache_ptr)
                 {
-                    allocator_snapshot.free(allocator_snapshot.userdata, (void*)cache_ptr);
+                    allocator_snapshot.free(allocator_snapshot.userdata, cache_ptr);
                 }
             if (err->message)
                 {
@@ -832,10 +832,10 @@ static void ensure_json_cache_current(gitledger_error_t* err)
     if (err->ctx_generation != snapshot)
         {
             /* Invalidate cached JSON atomically so only one thread frees it. */
-            uintptr_t cache_ptr = (uintptr_t) atomic_exchange(&err->json_cache, NULL);
+            void* cache_ptr = atomic_exchange(&err->json_cache, NULL);
             if (cache_ptr)
                 {
-                    gitledger_context_free(err->ctx, (void*) cache_ptr);
+                    gitledger_context_free(err->ctx, cache_ptr);
                 }
             err->ctx_generation = snapshot;
         }
