@@ -11,13 +11,13 @@ if vendor_libgit2
 endif
 
 libgit2_required = with_libgit2_opt.enabled()
-libgit2_dep = dependency('libgit2', method: 'pkg-config', required: libgit2_required)
+libgit2_dep = dependency('libgit2', required: libgit2_required)
 
 if not libgit2_dep.found()
   if with_libgit2_opt.disabled()
     message('libgit2 disabled by configuration; continuing without it.')
   else
-    message('libgit2 development files not found; install via your package manager (e.g. apt install libgit2-dev).')
+    message('libgit2 development files not found; install via your package manager (e.g. apt install libgit2-dev, brew install libgit2, or choco install libgit2).')
     if libgit2_required
       error('libgit2 was requested but could not be located.')
     endif

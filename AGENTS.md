@@ -14,6 +14,12 @@ If you were expecting a YAML schema, go cry into your `.gitlab-ci.yml`.
 
 ## REPO RULES (READ THIS TWICE)
 
+> **ABSOLUTELY NO HISTORY REWRITES**
+
+Do not use `git commit --amend`, do not force-push, do not rebase. Ever.
+If you need to fix something, add a new commit and push normally. If
+upstream moved, pull and merge. The ledger is append-only.
+
 > **NO REBASING.**  
 
 Rebasing is revisionist history. This is a ledger. Not a TED talk.

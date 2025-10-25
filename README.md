@@ -117,8 +117,9 @@ headers are available before configuring either build system:
 
 Optional knobs surface in both build systems:
 
-- CMake: `-DGITLEDGER_VENDOR_LIBGIT2=ON` (placeholder that currently emits a
-  guidance error), `-DGITLEDGER_WITH_CROARING=ON`, and `-DGITLEDGER_WITH_BLAKE3=ON`.
+- CMake: `-DGITLEDGER_WITH_LIBGIT2=OFF` to configure without libgit2, (future)
+  `-DGITLEDGER_VENDOR_LIBGIT2=ON` for vendoring once implemented, plus
+  placeholders `-DGITLEDGER_WITH_CROARING=ON` and `-DGITLEDGER_WITH_BLAKE3=ON`.
 - Meson: `-Dvendor_libgit2=true`, `-Dwith_croaring=enabled`, and `-Dwith_blake3=enabled`.
 
 The CRoaring and BLAKE3 switches are stubs for future work and simply log that
