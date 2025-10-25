@@ -24,9 +24,14 @@ endif()
 if(MSVC)
     set(PROJECT_WARNING_FLAGS /W4 /WX /we4244 /we4267 /we4456 /we4457 /we4458 /we4459)
 else()
-    # Unix builds: enforce the strict policy and standard per project guidelines.
-    # Include -std=c99 here explicitly to match tooling expectations.
-    set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -pedantic -std=c99 -Wno-fun)
+
+include(CheckCCompilerFlag)
+set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -pedantic -std=c99)
+check_c_compiler_flag("-Wno-fun" COMPILER_SUPPORTS_WNOFUN)
+if(COMPILER_SUPPORTS_WNOFUN)
+  list(APPEND PROJECT_WARNING_FLAGS -Wno-fun)
+endif()
+
 endif()
 
 set(LIBGITLEDGER_SOURCES

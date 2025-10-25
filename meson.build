@@ -41,6 +41,13 @@ lib_sources = [
 
 include_dir = include_directories('libgitledger/include', 'include')
 
+cc = meson.get_compiler('c')
+warn_flags = ['-Wall','-Wextra','-Werror','-pedantic','-std=c99']
+if cc.has_argument('-Wno-fun')
+  warn_flags += ['-Wno-fun']
+endif
+
+
 lib_deps = []
 lib_c_args = []
 if libgit2_dep.found()
@@ -53,7 +60,7 @@ libgitledger = static_library(
   lib_sources,
   include_directories: include_dir,
   dependencies: lib_deps,
-  c_args: lib_c_args + ['-DGITLEDGER_BUILD'],
+  c_args: lib_c_args + ['-DGITLEDGER_BUILD'] + warn_flags,
   )
 
 tests_version = executable(
@@ -61,7 +68,7 @@ tests_version = executable(
   'tests/version_test.c',
   include_directories: include_dir,
   link_with: libgitledger,
-  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  c_args: warn_flags,
   )
 
 test('version', tests_version)
@@ -71,7 +78,7 @@ tests_smoke = executable(
   'libgitledger/tests/main.c',
   include_directories: include_dir,
   link_with: libgitledger,
-  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  c_args: warn_flags,
   )
 
 test('cli_smoke', tests_smoke)
@@ -88,7 +95,7 @@ tests_error = executable(
   'tests/error_test.c',
   include_directories: include_dir,
   link_with: libgitledger,
-  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  c_args: warn_flags,
   )
 
 test('error', tests_error)
