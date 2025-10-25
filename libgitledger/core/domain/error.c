@@ -137,7 +137,11 @@ struct gitledger_error
     gitledger_code_t        code;
     gitledger_error_flags_t flags;
     char*                   message;
+#if __STDC_VERSION__ >= 201112L
     _Atomic(void*)          json_cache; /* published via CAS; freed via atomic exchange */
+#else
+    void*                   json_cache; /* non-atomic fallback under C99 */
+#endif
     gitledger_error_t*      cause;
     const char*             file;
     const char*             func;
@@ -333,7 +337,13 @@ static void free_error(gitledger_error_t* err)
     if (allocator_snapshot.free)
         {
             /* Single-owner free via atomic exchange to avoid double free. */
-            void* cache_ptr = atomic_exchange(&err->json_cache, NULL);
+            void* cache_ptr = NULL;
+#if __STDC_VERSION__ >= 201112L
+            cache_ptr = atomic_exchange(&err->json_cache, NULL);
+#else
+            cache_ptr        = err->json_cache;
+            err->json_cache  = NULL;
+#endif
             if (cache_ptr)
                 {
                     allocator_snapshot.free(allocator_snapshot.userdata, cache_ptr);
@@ -832,7 +842,13 @@ static void ensure_json_cache_current(gitledger_error_t* err)
     if (err->ctx_generation != snapshot)
         {
             /* Invalidate cached JSON atomically so only one thread frees it. */
-            void* cache_ptr = atomic_exchange(&err->json_cache, NULL);
+            void* cache_ptr = NULL;
+#if __STDC_VERSION__ >= 201112L
+            cache_ptr = atomic_exchange(&err->json_cache, NULL);
+#else
+            cache_ptr       = err->json_cache;
+            err->json_cache = NULL;
+#endif
             if (cache_ptr)
                 {
                     gitledger_context_free(err->ctx, cache_ptr);
@@ -850,7 +866,12 @@ const char* gitledger_error_json(gitledger_error_t* err)
 
     ensure_json_cache_current(err);
 
-    void* cached_ptr = atomic_load(&err->json_cache);
+    void* cached_ptr = NULL;
+#if __STDC_VERSION__ >= 201112L
+    cached_ptr = atomic_load(&err->json_cache);
+#else
+    cached_ptr = err->json_cache;
+#endif
     if (cached_ptr)
         {
             return (const char*) cached_ptr;
@@ -869,6 +890,7 @@ const char* gitledger_error_json(gitledger_error_t* err)
         }
     gitledger_error_render_json(err, buffer, required);
     void* expected = NULL;
+#if __STDC_VERSION__ >= 201112L
     if (atomic_compare_exchange_strong(&err->json_cache, &expected, buffer))
         {
             return buffer;
@@ -876,6 +898,15 @@ const char* gitledger_error_json(gitledger_error_t* err)
     /* Another thread published a cache; keep theirs and free ours. */
     gitledger_context_free(err->ctx, buffer);
     return (const char*) expected;
+#else
+    if (err->json_cache == NULL)
+        {
+            err->json_cache = buffer;
+            return buffer;
+        }
+    gitledger_context_free(err->ctx, buffer);
+    return (const char*) err->json_cache;
+#endif
 }
 
 char* gitledger_error_json_copy(gitledger_context_t* ctx, gitledger_error_t* err)
