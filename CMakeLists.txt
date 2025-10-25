@@ -42,7 +42,12 @@ if(GITLEDGER_VENDOR_LIBGIT2)
     message(FATAL_ERROR "Vendored libgit2 support is not implemented yet. Install libgit2 or configure without -DGITLEDGER_VENDOR_LIBGIT2=ON.")
 endif()
 
-find_package(PkgConfig REQUIRED)
+find_package(PkgConfig)
+
+if(NOT PKG_CONFIG_FOUND)
+    message(FATAL_ERROR "pkg-config was not found. Install pkg-config (e.g. 'sudo apt-get install pkg-config', 'brew install pkg-config', or 'choco install pkgconfiglite') and reconfigure.")
+endif()
+
 pkg_check_modules(LIBGIT2 IMPORTED_TARGET libgit2)
 
 if(NOT LIBGIT2_FOUND)

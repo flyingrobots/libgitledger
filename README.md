@@ -109,6 +109,12 @@ headers are available before configuring either build system:
   brew install libgit2 pkg-config
   ```
 
+- **Windows (Chocolatey)**
+
+  ```powershell
+  choco install libgit2 pkgconfiglite
+  ```
+
 Optional knobs surface in both build systems:
 
 - CMake: `-DGITLEDGER_VENDOR_LIBGIT2=ON` (placeholder that currently emits a
