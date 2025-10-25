@@ -115,8 +115,12 @@ wait_for_oldest_job() {
 }
 
 for config in "${matrix_configs[@]}"; do
-    start_job "${config}" "$@"
-    rc=$?
+    if start_job "${config}" "$@"; then
+        rc=0
+    else
+        rc=$?
+    fi
+
     if [[ ${rc} -eq 0 ]]; then
         :
     elif [[ ${rc} -eq 2 ]]; then
