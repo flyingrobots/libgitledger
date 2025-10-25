@@ -1,4 +1,0 @@
-version 3 0.117809
-gitledger_cli_smoke 3 0.108831
-error 3 0.102704
----

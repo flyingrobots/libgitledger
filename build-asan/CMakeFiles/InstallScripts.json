@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/james/git/libgitledger/build-asan/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
