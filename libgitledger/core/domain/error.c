@@ -889,8 +889,8 @@ const char* gitledger_error_json(gitledger_error_t* err)
             return "{}";
         }
     gitledger_error_render_json(err, buffer, required);
-    void* expected = NULL;
 #if __STDC_VERSION__ >= 201112L
+    void* expected = NULL;
     if (atomic_compare_exchange_strong(&err->json_cache, &expected, buffer))
         {
             return buffer;
