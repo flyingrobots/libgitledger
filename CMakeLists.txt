@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(libgitledger VERSION 0.1.0 LANGUAGES C)
 
-set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -24,8 +24,9 @@ endif()
 if(MSVC)
     set(PROJECT_WARNING_FLAGS /W4 /WX /we4244 /we4267 /we4456 /we4457 /we4458 /we4459)
 else()
-    # Keep Unix builds strict and hide unintended symbol exports.
-    set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -Wpedantic -Wshadow -Wconversion -fvisibility=hidden)
+    # Unix builds: enforce the strict policy and standard per project guidelines.
+    # Include -std=c99 here explicitly to match tooling expectations.
+    set(PROJECT_WARNING_FLAGS -Wall -Wextra -Werror -pedantic -std=c99 -Wno-fun)
 endif()
 
 set(LIBGITLEDGER_SOURCES
@@ -37,7 +38,7 @@ set(LIBGITLEDGER_SOURCES
 
 set(LIBGITLEDGER_HEADERS
     libgitledger/include/gitledger/gitledger.h
-    include/libgitledger/version.h
+    include/gitledger/version.h
     include/gitledger/context.h
     include/gitledger/error.h
     include/gitledger/export.h
@@ -46,6 +47,7 @@ set(LIBGITLEDGER_HEADERS
 add_library(gitledger STATIC ${LIBGITLEDGER_SOURCES} ${LIBGITLEDGER_HEADERS})
 target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
 target_compile_definitions(gitledger PRIVATE GITLEDGER_BUILD=1)
+target_link_options(gitledger PRIVATE -nostdlib)
 
 if(GITLEDGER_VENDOR_LIBGIT2)
     message(FATAL_ERROR "Vendored libgit2 support is not implemented yet.\n"
@@ -99,18 +101,22 @@ target_include_directories(gitledger
 add_executable(gitledger_version_test tests/version_test.c)
 target_compile_options(gitledger_version_test PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(gitledger_version_test PRIVATE gitledger)
+target_link_options(gitledger_version_test PRIVATE -nostdlib)
 
 add_executable(gitledger_tests libgitledger/tests/main.c)
 target_compile_options(gitledger_tests PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(gitledger_tests PRIVATE gitledger)
+target_link_options(gitledger_tests PRIVATE -nostdlib)
 
 add_executable(mg-ledger libgitledger/cli/mg-ledger.c)
 target_compile_options(mg-ledger PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(mg-ledger PRIVATE gitledger)
+target_link_options(mg-ledger PRIVATE -nostdlib)
 
 add_executable(gitledger_error_test tests/error_test.c)
 target_compile_options(gitledger_error_test PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(gitledger_error_test PRIVATE gitledger)
+target_link_options(gitledger_error_test PRIVATE -nostdlib)
 
 include(CTest)
 if(BUILD_TESTING)

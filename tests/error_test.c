@@ -67,7 +67,7 @@ static void test_basic_json_behavior(void)
 
     size_t required = gitledger_error_render_json(root, NULL, 0);
     assert(required > 1U);
-    char* json_buffer = (char*) malloc(required);
+    char* json_buffer = (char*) malloc(required * sizeof *json_buffer);
     assert(json_buffer);
     size_t actual = gitledger_error_render_json(root, json_buffer, required);
     assert(actual == required);
@@ -127,7 +127,7 @@ static void test_deep_cause_chain(void)
 
     size_t required = gitledger_error_render_json(current, NULL, 0);
     assert(required > 1U);
-    char* json_buffer = (char*) malloc(required);
+    char* json_buffer = (char*) malloc(required * sizeof *json_buffer);
     assert(json_buffer);
     gitledger_error_render_json(current, json_buffer, required);
 
@@ -168,5 +168,32 @@ int main(void)
     test_basic_json_behavior();
     test_deep_cause_chain();
     test_allocator_balance();
+#ifdef NDEBUG
+    /* Release builds must refuse context teardown with live errors. */
+    extern void test_teardown_refusal_with_live_errors(void);
+    test_teardown_refusal_with_live_errors();
+#endif
     return 0;
 }
+
+#ifdef NDEBUG
+static void test_teardown_refusal_with_live_errors(void)
+{
+    fprintf(stderr, "test_teardown_refusal_with_live_errors (Release)\n");
+    gitledger_context_t* ctx = gitledger_context_create(NULL);
+    assert(ctx);
+
+    gitledger_error_t* err =
+        GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, "%s", "live");
+    assert(err);
+
+    /* First try to release the context should be refused because err is live. */
+    int rc = gitledger_context_try_release(ctx);
+    assert(rc == 0);
+    assert(gitledger_context_valid(ctx) == 1);
+
+    gitledger_error_release(err);
+    rc = gitledger_context_try_release(ctx);
+    assert(rc == 1);
+}
+#endif

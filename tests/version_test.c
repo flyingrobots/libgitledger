@@ -1,4 +1,4 @@
-#include "libgitledger/version.h"
+#include "gitledger/version.h"
 
 #include <stddef.h>
 #include <stdio.h>

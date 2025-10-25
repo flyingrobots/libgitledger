@@ -16,11 +16,6 @@ extern "C"
 
     typedef struct gitledger_error gitledger_error_t;
 
-    typedef enum
-    {
-        GL_STATUS_OK    = 0,
-        GL_STATUS_ERROR = 1
-    } gitledger_status_t;
 
     typedef enum
     {
@@ -61,7 +56,8 @@ extern "C"
 
 /**
  * Maximum causal depth rendered into JSON before truncation.
- * ABI NOTE: increasing this constant is a breaking change.
+ * API NOTE: increasing this constant changes output and behaviour; callers and
+ * downstream tools depending on the previous depth may break.
  */
 #define GITLEDGER_ERROR_MAX_DEPTH 64U
 
@@ -92,16 +88,18 @@ extern "C"
     /*
      * Ownership & Lifetime
      * --------------------
-     * - Functions that return gitledger_error_t* transfer one owning reference
-     *   to the caller (initial refcount = 1).
-     * - gitledger_error_with_cause_* retains the supplied cause when non-NULL;
-     *   the parent owns exactly one reference to its cause. Releasing the
-     *   parent releases that retained reference.
-     * - gitledger_error_cause(e) returns a borrowed pointer; callers must call
-     *   gitledger_error_retain() if they need the cause to outlive the parent.
-     * - Contexts do not free errors at teardown; in debug builds the context
-     *   may log if destroyed with live errors. Always release all errors before
-     *   releasing their context.
+     * - Create/return semantics: Functions that return gitledger_error_t*
+     *   transfer one owning reference to the caller (initial refcount = 1).
+     * - Cause retention: gitledger_error_with_cause_* retains the supplied
+     *   cause (when non-NULL); the parent owns exactly one reference to its
+     *   cause and releasing the parent releases that reference.
+     * - Borrowed access: gitledger_error_cause(e) returns a borrowed pointer;
+     *   callers must call gitledger_error_retain() if they need the cause to
+     *   outlive the parent.
+     * - Context teardown: destroying a context with live errors is forbidden.
+     *   In Debug builds, context teardown aborts; in Release builds, teardown
+     *   is refused and a diagnostic is emitted to stderr. Always release all
+     *   errors before releasing their context.
      */
 
     GITLEDGER_API gitledger_error_t*
@@ -125,39 +123,17 @@ extern "C"
                                          gitledger_source_location_t location, const char* fmt,
                                          va_list args);
 
-    static inline gitledger_error_t* gitledger_error_create_ctx_auto(gitledger_context_t* ctx,
-                                                                     gitledger_domain_t   domain,
-                                                                     gitledger_code_t     code,
-                                                                     const char*          fmt, ...)
-    {
-        gitledger_source_location_t location = {__FILE__, __LINE__, __func__};
-        va_list                     args;
-        va_start(args, fmt);
-        gitledger_error_t* err =
-            gitledger_error_create_ctx_loc_v(ctx, domain, code, location, fmt, args);
-        va_end(args);
-        return err;
-    }
+    /* Macros capture caller location at the call-site. Require an explicit
+       format string for safety; pass "" when no message arguments are needed. */
+#define GITLEDGER_ERROR_CREATE(ctx, domain, code, fmt, ...)                                         \
+    gitledger_error_create_ctx_loc((ctx), (domain), (code),                                        \
+                                   (gitledger_source_location_t){__FILE__, __LINE__, __func__},    \
+                                   (fmt), ##__VA_ARGS__)
 
-    static inline gitledger_error_t*
-    gitledger_error_with_cause_ctx_auto(gitledger_context_t* ctx, gitledger_domain_t domain,
-                                        gitledger_code_t code, const gitledger_error_t* cause,
-                                        const char* fmt, ...)
-    {
-        gitledger_source_location_t location = {__FILE__, __LINE__, __func__};
-        va_list                     args;
-        va_start(args, fmt);
-        gitledger_error_t* err =
-            gitledger_error_with_cause_ctx_loc_v(ctx, domain, code, cause, location, fmt, args);
-        va_end(args);
-        return err;
-    }
-
-#define GITLEDGER_ERROR_CREATE(ctx, domain, code, ...)                                             \
-    gitledger_error_create_ctx_auto((ctx), (domain), (code), __VA_ARGS__)
-
-#define GITLEDGER_ERROR_WITH_CAUSE(ctx, domain, code, cause, ...)                                  \
-    gitledger_error_with_cause_ctx_auto((ctx), (domain), (code), (cause), __VA_ARGS__)
+#define GITLEDGER_ERROR_WITH_CAUSE(ctx, domain, code, cause, fmt, ...)                              \
+    gitledger_error_with_cause_ctx_loc((ctx), (domain), (code), (cause),                           \
+                                       (gitledger_source_location_t){__FILE__, __LINE__, __func__}, \
+                                       (fmt), ##__VA_ARGS__)
 
     typedef bool (*gitledger_error_visitor_t)(const gitledger_error_t* err, void* userdata);
     GITLEDGER_API void gitledger_error_walk(const gitledger_error_t*  top,

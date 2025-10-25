@@ -86,7 +86,8 @@ static void context_unlock(gitledger_context_t* ctx)
     atomic_flag_clear_explicit(&ctx->lock, memory_order_release);
 }
 
-static size_t context_count_errors(const gitledger_context_t* ctx)
+/* Call under lock: counts current error nodes while the caller holds the spinlock. */
+static size_t context_count_errors_locked(const gitledger_context_t* ctx)
 {
     size_t                        count = 0U;
     const gitledger_error_node_t* node  = ctx->errors;
@@ -119,41 +120,38 @@ static size_t context_detach_and_free_error_nodes(gitledger_context_t* ctx)
 
 static void context_debug_log_live_errors(size_t live_count)
 {
-#ifndef NDEBUG
-    if (live_count > 0U)
+    if (live_count == 0U)
         {
-            char   buf[GITLEDGER_CONTEXT_DIAG_BUF];
-            size_t length        = 0U;
-            int    written_chars = snprintf(
-                buf, sizeof buf,
-                "gitledger_context_destroy: %zu live error(s) at context teardown (leaked)\n",
-                live_count);
-            if (written_chars < 0)
+            return;
+        }
+    char   buf[GITLEDGER_CONTEXT_DIAG_BUF];
+    size_t length        = 0U;
+    int    written_chars = snprintf(
+        buf, sizeof buf,
+        "gitledger_context_destroy: %zu live error(s) at context teardown (leaked)\n",
+        live_count);
+    if (written_chars < 0)
+        {
+            const char* fallback =
+                "gitledger_context_destroy: live error(s) at context teardown (leaked)\n";
+            length = strlen(fallback);
+            if (length >= sizeof buf)
                 {
-                    const char* fallback =
-                        "gitledger_context_destroy: live error(s) at context teardown (leaked)\n";
-                    length = strlen(fallback);
-                    if (length >= sizeof buf)
-                        {
-                            length = sizeof buf - 1U;
-                        }
-                    memcpy(buf, fallback, length);
+                    length = sizeof buf - 1U;
+                }
+            memcpy(buf, fallback, length);
+            buf[length] = '\0';
+        }
+    else
+        {
+            length = (size_t) written_chars;
+            if (length >= sizeof buf)
+                {
+                    length      = sizeof buf - 1U;
                     buf[length] = '\0';
                 }
-            else
-                {
-                    length = (size_t) written_chars;
-                    if (length >= sizeof buf)
-                        {
-                            length      = sizeof buf - 1U;
-                            buf[length] = '\0';
-                        }
-                }
-            (void) fwrite(buf, 1U, length, stderr);
         }
-#else
-    (void) live_count;
-#endif
+    (void) fwrite(buf, 1U, length, stderr);
 }
 
 static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* err)
@@ -243,17 +241,24 @@ void gitledger_context_retain(gitledger_context_t* ctx)
 static void context_destroy(gitledger_context_t* ctx)
 {
     /* Enforce lifecycle: destroying with live errors is a contract breach. */
-#ifndef NDEBUG
-    if (ctx->errors != NULL)
+    size_t live       = 0U;
+    bool   has_errors = false;
+    context_lock(ctx);
+    has_errors = (ctx->errors != NULL);
+    if (has_errors)
         {
-            size_t live = context_count_errors(ctx);
+            live = context_count_errors_locked(ctx);
+        }
+    context_unlock(ctx);
+#ifndef NDEBUG
+    if (has_errors)
+        {
             context_debug_log_live_errors(live);
             abort();
         }
 #else
-    if (ctx->errors != NULL)
+    if (has_errors)
         {
-            size_t live = context_count_errors(ctx);
             context_debug_log_live_errors(live);
             /* Keep the context alive: bump refcount back and refuse teardown. */
             (void) atomic_fetch_add_explicit(&ctx->refcount, 1U, memory_order_relaxed);
@@ -270,16 +275,23 @@ static void context_destroy(gitledger_context_t* ctx)
     ctx->allocator.free(ctx->allocator.userdata, ctx);
 }
 
-void gitledger_context_release(gitledger_context_t* ctx)
+int gitledger_context_try_release(gitledger_context_t* ctx)
 {
     if (!context_is_valid(ctx))
         {
-            return;
+            return -1;
         }
     if (atomic_fetch_sub_explicit(&ctx->refcount, 1U, memory_order_acq_rel) == 1U)
         {
             context_destroy(ctx);
+            return 1;
         }
+    return 0;
+}
+
+void gitledger_context_release(gitledger_context_t* ctx)
+{
+    (void) gitledger_context_try_release(ctx);
 }
 
 const gitledger_allocator_t* gitledger_context_allocator(const gitledger_context_t* ctx)

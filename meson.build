@@ -61,6 +61,8 @@ tests_version = executable(
   'tests/version_test.c',
   include_directories: include_dir,
   link_with: libgitledger,
+  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  link_args: ['-nostdlib'],
 )
 
 test('version', tests_version)
@@ -70,6 +72,8 @@ tests_smoke = executable(
   'libgitledger/tests/main.c',
   include_directories: include_dir,
   link_with: libgitledger,
+  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  link_args: ['-nostdlib'],
 )
 
 test('cli_smoke', tests_smoke)
@@ -86,6 +90,8 @@ tests_error = executable(
   'tests/error_test.c',
   include_directories: include_dir,
   link_with: libgitledger,
+  c_args: ['-Wall', '-Wextra', '-Werror', '-pedantic', '-std=c99', '-Wno-fun'],
+  link_args: ['-nostdlib'],
 )
 
 test('error', tests_error)

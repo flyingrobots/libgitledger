@@ -137,7 +137,7 @@ struct gitledger_error
     gitledger_code_t        code;
     gitledger_error_flags_t flags;
     char*                   message;
-    char*                   json_cache;
+    atomic_uintptr_t        json_cache; /* published via CAS; freed via atomic exchange */
     gitledger_error_t*      cause;
     const char*             file;
     const char*             func;
@@ -226,14 +226,18 @@ static const char* code_to_string(gitledger_code_t code)
     return "UNKNOWN";
 }
 
+/* Escape per RFC 8259: ensure control chars (<0x20), backslash and quotes are encoded.
+   Use unsigned char iteration to avoid signed-char UB on non-ASCII platforms.
+   A small on-stack scratch is used for short sequences (e.g., \uXXXX). */
 static void gl_json_escape(gl_buf_t* buf, const char* text)
 {
-    if (!text)
+    if (!text) /* Early return avoids dereferencing NULL and keeps builder intact. */
         {
             return;
         }
     for (const unsigned char* cursor = (const unsigned char*) text; *cursor; ++cursor)
         {
+            /* scratch capacity covers "\\u%04x" plus NUL. */
             char scratch[GITLEDGER_JSON_ESCAPE_BUFFER_SIZE] = {0};
             switch (*cursor)
                 {
@@ -259,10 +263,12 @@ static void gl_json_escape(gl_buf_t* buf, const char* text)
                     gl_buf_append(buf, "\\t", 2U);
                     break;
                 default:
+                    /* JSON forbids control chars < 0x20: emit \uXXXX to remain portable. */
                     if (*cursor < GITLEDGER_JSON_ASCII_MIN_PRINTABLE)
                         {
-                            int written =
-                                gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x", *cursor);
+                            /* snprintf ensures bounds; only append when it produced output. */
+                            int written = gl_safe_snprintf(scratch, sizeof scratch, "\\u%04x",
+                                                           *cursor);
                             if (written > 0)
                                 {
                                     gl_buf_append(buf, scratch, (size_t) written);
@@ -270,6 +276,7 @@ static void gl_json_escape(gl_buf_t* buf, const char* text)
                         }
                     else
                         {
+                            /* Fast path for printable single-byte ASCII. */
                             scratch[0] = (char) *cursor;
                             gl_buf_append(buf, scratch, 1U);
                         }
@@ -325,9 +332,11 @@ static void free_error(gitledger_error_t* err)
     gitledger_allocator_t allocator_snapshot = err->allocator;
     if (allocator_snapshot.free)
         {
-            if (err->json_cache)
+            /* Single-owner free via atomic exchange to avoid double free. */
+            uintptr_t cache_ptr = atomic_exchange(&err->json_cache, (uintptr_t) 0);
+            if (cache_ptr)
                 {
-                    allocator_snapshot.free(allocator_snapshot.userdata, err->json_cache);
+                    allocator_snapshot.free(allocator_snapshot.userdata, (void*) cache_ptr);
                 }
             if (err->message)
                 {
@@ -822,10 +831,11 @@ static void ensure_json_cache_current(gitledger_error_t* err)
     uint32_t snapshot = gitledger_context_generation_snapshot_internal(err->ctx);
     if (err->ctx_generation != snapshot)
         {
-            if (err->json_cache)
+            /* Invalidate cached JSON atomically so only one thread frees it. */
+            uintptr_t cache_ptr = atomic_exchange(&err->json_cache, (uintptr_t) 0);
+            if (cache_ptr)
                 {
-                    gitledger_context_free(err->ctx, err->json_cache);
-                    err->json_cache = NULL;
+                    gitledger_context_free(err->ctx, (void*) cache_ptr);
                 }
             err->ctx_generation = snapshot;
         }
@@ -840,9 +850,10 @@ const char* gitledger_error_json(gitledger_error_t* err)
 
     ensure_json_cache_current(err);
 
-    if (err->json_cache)
+    uintptr_t cached_ptr = atomic_load(&err->json_cache);
+    if (cached_ptr)
         {
-            return err->json_cache;
+            return (const char*) cached_ptr;
         }
 
     if (!err->ctx)
@@ -857,8 +868,14 @@ const char* gitledger_error_json(gitledger_error_t* err)
             return "{}";
         }
     gitledger_error_render_json(err, buffer, required);
-    err->json_cache = buffer;
-    return err->json_cache;
+    uintptr_t expected = 0;
+    if (atomic_compare_exchange_strong(&err->json_cache, &expected, (uintptr_t) buffer))
+        {
+            return buffer;
+        }
+    /* Another thread published a cache; keep theirs and free ours. */
+    gitledger_context_free(err->ctx, buffer);
+    return (const char*) expected;
 }
 
 char* gitledger_error_json_copy(gitledger_context_t* ctx, gitledger_error_t* err)
