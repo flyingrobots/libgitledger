@@ -14,6 +14,7 @@ RUN apt-get update \
         python3-pip=24.0+dfsg-1ubuntu1.3 \
         rsync=3.2.7-1ubuntu1.2 \
         meson=1.3.2-1ubuntu1 \
+        libgit2-dev=1.7.2+ds-1ubuntu3 \
         gcc-14=14.2.0-4ubuntu2~24.04 \
         g++-14=14.2.0-4ubuntu2~24.04 \
         clang-18=1:18.1.3-1ubuntu1 \
