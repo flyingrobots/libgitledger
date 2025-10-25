@@ -21,6 +21,9 @@ build/
 build-debug/
 build-release/
 build-tidy/
+build-asan/
+build-tsan/
+build-analyze/
 meson-debug/
 meson-release/
 meson-*/

@@ -96,6 +96,26 @@ if [[ ! -f "${filtered_db}" ]]; then
   exit 1
 fi
 
+# Strip flags that clang-tidy's parser rejects even if the compile DB
+# originated from GCC (e.g., -Wno-fun which is non-standard/joke). This keeps
+# tidy from failing on unknown-warning-option.
+python3 - "$filtered_db" <<'PY'
+import json, sys
+p=sys.argv[1]
+data=json.loads(open(p).read())
+changed=False
+for e in data:
+    if 'arguments' in e and isinstance(e['arguments'], list):
+        args=[a for a in e['arguments'] if a!='-Wno-fun']
+        if args!=e['arguments']:
+            e['arguments']=args; changed=True
+    if 'command' in e and isinstance(e['command'], str):
+        if ' -Wno-fun' in e['command']:
+            e['command']=e['command'].replace(' -Wno-fun',''); changed=True
+if changed:
+    open(p,'w').write(json.dumps(data, indent=2))
+PY
+
 if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   echo "clang-tidy: no eligible C sources after filtering" >&2
   echo "Set CLANG_TIDY_ALLOWED_ROOTS to expand the search if this was unexpected" >&2

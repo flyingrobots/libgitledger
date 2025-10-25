@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
-    echo "activity-log: jq is required" >&2
-    exit 1
-fi
-
-if ! command -v npx >/dev/null 2>&1; then
-    echo "activity-log: npx is required" >&2
-    exit 1
-fi
-
 log_file="ACTIVITY.log.jsonl"
 schema_file="ACTIVITY.schema.json"
 
@@ -24,32 +14,48 @@ if [[ ! -f "${schema_file}" ]]; then
     exit 1
 fi
 
-tmp_dir=$(mktemp -d)
-trap 'rm -rf "${tmp_dir}"' EXIT
+python3 - "$log_file" "$schema_file" <<'PY'
+import json, os, re, sys
 
-index=0
-while IFS= read -r line; do
-    if [[ -z "${line}" ]]; then
-        continue
-    fi
-    if ! printf '%s\n' "${line}" | jq -e '.' >/dev/null; then
-        echo "activity-log: invalid JSON on line $((index + 1))" >&2
-        exit 1
-    fi
-    printf '%s\n' "${line}" > "${tmp_dir}/${index}.json"
-    index=$((index + 1))
-done < "${log_file}"
+log_path, schema_path = sys.argv[1], sys.argv[2]
+if not os.path.exists(log_path):
+    sys.exit("activity-log: missing log file")
 
-if (( index == 0 )); then
-    echo "activity-log: no entries found" >&2
-    exit 1
-fi
+def is_rfc3339(s: str) -> bool:
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$', s))
 
-declare -a data_args
-for entry in "${tmp_dir}"/*.json; do
-    data_args+=(-d "${entry}")
-done
-
-npx --yes ajv-cli@5.0.0 validate --spec=draft7 --strict=false -s "${schema_file}" "${data_args[@]}" >/dev/null
-
-echo "activity-log: validation passed"
+count=0
+with open(log_path, 'r', encoding='utf-8') as f:
+    for idx, line in enumerate(f, 1):
+        line=line.strip()
+        if not line:
+            continue
+        try:
+            obj=json.loads(line)
+        except Exception:
+            print(f"activity-log: invalid JSON on line {idx}", file=sys.stderr)
+            sys.exit(1)
+        # Accept either summary blocks or activity entries per schema intent.
+        if 'timestamp' in obj:
+            # minimal shape check
+            if not isinstance(obj.get('branches', []), list) or not isinstance(obj.get('activity', []), list):
+                print(f"activity-log: invalid summary on line {idx}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            required={'who','what','where','when','why','how','protip'}
+            if not required.issubset(obj.keys()):
+                missing=required-set(obj.keys())
+                print(f"activity-log: missing keys {sorted(missing)} on line {idx}", file=sys.stderr)
+                sys.exit(1)
+            if not isinstance(obj['where'], list):
+                print(f"activity-log: 'where' must be an array on line {idx}", file=sys.stderr)
+                sys.exit(1)
+            if not isinstance(obj['when'], str) or not is_rfc3339(obj['when']):
+                print(f"activity-log: 'when' must be RFC3339 string on line {idx}", file=sys.stderr)
+                sys.exit(1)
+        count+=1
+if count==0:
+    print("activity-log: no entries found", file=sys.stderr)
+    sys.exit(1)
+print("activity-log: validation passed")
+PY

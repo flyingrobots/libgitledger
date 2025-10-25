@@ -755,7 +755,55 @@ This is aligned to the hexagonal structure used in [git-mind](https://github.com
 
 ---
 
-## XIII. Testing Strategy (global)
+## XIII. Error API
+
+Errors are represented by opaque `gitledger_error_t` structures. Creation helpers capture the source
+location and attach optional causes, producing a causal chain that callers can walk with
+`gitledger_error_walk` without recursion. Each error records:
+
+- `domain` (`gitledger_domain_t`) and `code` (`gitledger_code_t`) — numerical values are frozen.
+- `flags` (`GL_ERRFLAG_RETRYABLE`, `GL_ERRFLAG_PERMANENT`, `GL_ERRFLAG_AUTH`).
+- A UTF-8 message allocated via the context allocator.
+- Optional source file, line, function.
+- Optional cause (retained, released via reference counting).
+
+Creation entry points come in two layers:
+
+- `gitledger_error_create_ctx_loc_v` / `_with_cause_ctx_loc_v` accept an explicit
+  `gitledger_source_location_t` and a `va_list`; they never allocate internal temporaries and are
+  safe for bindings that already captured formatting arguments.
+- `GITLEDGER_ERROR_CREATE` / `GITLEDGER_ERROR_WITH_CAUSE` are inline helpers that forward to the
+  above, automatically capturing `__FILE__`, `__LINE__`, and `__func__`, and they work even when no
+  variadic arguments are supplied.
+
+Default guidance per domain/code:
+
+| Domain | Example Codes | Flags | Guidance |
+|--------|----------------|-------|----------|
+| `GL_DOMAIN_GIT` | `GL_CODE_NOT_FOUND`, `GL_CODE_CONFLICT` | none | Inspect code and decide retry. |
+| `GL_DOMAIN_POLICY` | `GL_CODE_POLICY_VIOLATION` | `PERMANENT` | Do not retry automatically; surface policy result. |
+| `GL_DOMAIN_TRUST` | `GL_CODE_TRUST_VIOLATION` | `PERMANENT`, `AUTH` | Require credential / trust escalation. |
+| `GL_DOMAIN_IO` | `GL_CODE_IO_ERROR` | `RETRYABLE` | Retry with backoff. |
+
+`gitledger_error_render_json` returns the exact byte count (including the terminating NUL) required
+to encode the full causal chain as deterministic JSON. Rendering is iterative, capped by
+`GITLEDGER_ERROR_MAX_DEPTH`, and emits `"truncated":true` when the chain exceeds that limit.
+`gitledger_error_json` memoizes the JSON on the error itself so repeated logging does not re-render;
+`gitledger_error_json_copy` duplicates it for callers that need the data to outlive the error. Messages
+are treated the same way via `gitledger_error_message_copy`. In Release builds, context teardown is
+refused while live errors exist and a diagnostic is emitted to stderr; in Debug builds, teardown aborts.
+Domain / code / flag
+strings are available through `gitledger_domain_name`, `gitledger_code_name`, and
+`gitledger_error_flags_format` for bindings that want symbolic names.
+
+Errors are reference counted. Contexts register outstanding errors for diagnostics only; they do not
+own or free errors. `gitledger_error_release` descends iteratively (no recursion) so deeply nested causal stacks cannot
+overflow a thread’s call stack. Callers can opt into shared ownership via `gitledger_error_retain`
+when an error must outlive the originating context.
+
+---
+
+## XIV. Testing Strategy (global)
 
 - Unit tests on domain (no Git), using fake ports (pure hexagonal advantage). ￼
 - Adapter tests against `libgit2` with ephemeral repos.
