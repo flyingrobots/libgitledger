@@ -767,6 +767,15 @@ location and attach optional causes, producing a causal chain that callers can w
 - Optional source file, line, function.
 - Optional cause (retained, released via reference counting).
 
+Creation entry points come in two layers:
+
+- `gitledger_error_create_ctx_loc_v` / `_with_cause_ctx_loc_v` accept an explicit
+  `gitledger_source_location_t` and a `va_list`; they never allocate internal temporaries and are
+  safe for bindings that already captured formatting arguments.
+- `GITLEDGER_ERROR_CREATE` / `GITLEDGER_ERROR_WITH_CAUSE` are inline helpers that forward to the
+  above, automatically capturing `__FILE__`, `__LINE__`, and `__func__`, and they work even when no
+  variadic arguments are supplied.
+
 Default guidance per domain/code:
 
 | Domain | Example Codes | Flags | Guidance |
@@ -776,10 +785,16 @@ Default guidance per domain/code:
 | `GL_DOMAIN_TRUST` | `GL_CODE_TRUST_VIOLATION` | `PERMANENT`, `AUTH` | Require credential / trust escalation. |
 | `GL_DOMAIN_IO` | `GL_CODE_IO_ERROR` | `RETRYABLE` | Retry with backoff. |
 
-`gitledger_error_render_json` emits deterministic JSON for the entire chain so bindings can surface
-structured diagnostics. `gitledger_error_json` caches a context-owned buffer for quick logging.
+`gitledger_error_render_json` returns the exact byte count (including the terminating NUL) required
+to encode the full causal chain as deterministic JSON. The renderer is iterative and guards against
+stack overflow; if the chain exceeds its on-stack scratch depth the output flags truncation instead
+of recursing. `gitledger_error_json` memoises this JSON in a context-owned buffer so repeated logging
+does not re-render. Both helpers honour the caller’s allocator and never leak references.
 
 Errors are reference counted; contexts track all outstanding errors and free them during teardown.
+`gitledger_error_release` descends iteratively (no recursion) so deeply nested causal stacks cannot
+overflow a thread’s call stack. Callers can opt into shared ownership via `gitledger_error_retain`
+when an error must outlive the originating context.
 
 ---
 
