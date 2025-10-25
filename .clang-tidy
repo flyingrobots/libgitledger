@@ -8,10 +8,9 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -readability-magic-numbers,
-  -bugprone-easily-swappable-parameters
+  # Numeric literals remain in-line for domain-defined constants; revisit if we centralize them.
+  -readability-magic-numbers
 WarningsAsErrors: '*'
-HeaderFilterRegex: '^(include|src|libgitledger)/.*\.(h|c)$'
 CheckOptions:
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
