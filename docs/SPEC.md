@@ -755,7 +755,35 @@ This is aligned to the hexagonal structure used in [git-mind](https://github.com
 
 ---
 
-## XIII. Testing Strategy (global)
+## XIII. Error API
+
+Errors are represented by opaque `gitledger_error_t` structures. Creation helpers capture the source
+location and attach optional causes, producing a causal chain that callers can walk with
+`gitledger_error_walk` without recursion. Each error records:
+
+- `domain` (`gitledger_domain_t`) and `code` (`gitledger_code_t`) — numerical values are frozen.
+- `flags` (`GL_ERRFLAG_RETRYABLE`, `GL_ERRFLAG_PERMANENT`, `GL_ERRFLAG_AUTH`).
+- A UTF-8 message allocated via the context allocator.
+- Optional source file, line, function.
+- Optional cause (retained, released via reference counting).
+
+Default guidance per domain/code:
+
+| Domain | Example Codes | Flags | Guidance |
+|--------|----------------|-------|----------|
+| `GL_DOMAIN_GIT` | `GL_CODE_NOT_FOUND`, `GL_CODE_CONFLICT` | none | Inspect code and decide retry. |
+| `GL_DOMAIN_POLICY` | `GL_CODE_POLICY_VIOLATION` | `PERMANENT` | Do not retry automatically; surface policy result. |
+| `GL_DOMAIN_TRUST` | `GL_CODE_TRUST_VIOLATION` | `PERMANENT`, `AUTH` | Require credential / trust escalation. |
+| `GL_DOMAIN_IO` | `GL_CODE_IO_ERROR` | `RETRYABLE` | Retry with backoff. |
+
+`gitledger_error_render_json` emits deterministic JSON for the entire chain so bindings can surface
+structured diagnostics. `gitledger_error_json` caches a context-owned buffer for quick logging.
+
+Errors are reference counted; contexts track all outstanding errors and free them during teardown.
+
+---
+
+## XIV. Testing Strategy (global)
 
 - Unit tests on domain (no Git), using fake ports (pure hexagonal advantage). ￼
 - Adapter tests against `libgit2` with ephemeral repos.

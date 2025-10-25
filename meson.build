@@ -4,7 +4,9 @@ project('libgitledger', 'c',
 )
 
 lib_sources = [
+  'libgitledger/core/context.c',
   'libgitledger/core/domain/gitledger.c',
+  'libgitledger/core/domain/error.c',
   'src/version.c',
 ]
 
@@ -40,3 +42,12 @@ executable(
   include_directories: include_dir,
   link_with: libgitledger,
 )
+
+tests_error = executable(
+  'gitledger_error_test',
+  'tests/error_test.c',
+  include_directories: include_dir,
+  link_with: libgitledger,
+)
+
+test('error', tests_error)

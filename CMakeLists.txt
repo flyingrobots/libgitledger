@@ -14,7 +14,9 @@ else()
 endif()
 
 set(LIBGITLEDGER_SOURCES
+    libgitledger/core/context.c
     libgitledger/core/domain/gitledger.c
+    libgitledger/core/domain/error.c
     src/version.c
 )
 
@@ -45,8 +47,13 @@ add_executable(mg-ledger libgitledger/cli/mg-ledger.c)
 target_compile_options(mg-ledger PRIVATE ${PROJECT_WARNING_FLAGS})
 target_link_libraries(mg-ledger PRIVATE gitledger)
 
+add_executable(gitledger_error_test tests/error_test.c)
+target_compile_options(gitledger_error_test PRIVATE ${PROJECT_WARNING_FLAGS})
+target_link_libraries(gitledger_error_test PRIVATE gitledger)
+
 include(CTest)
 if(BUILD_TESTING)
     add_test(NAME version COMMAND gitledger_version_test)
     add_test(NAME gitledger_cli_smoke COMMAND gitledger_tests)
+    add_test(NAME error COMMAND gitledger_error_test)
 endif()

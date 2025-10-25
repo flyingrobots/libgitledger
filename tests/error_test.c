@@ -1,0 +1,173 @@
+#include "gitledger/context.h"
+#include "gitledger/error.h"
+
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
+static bool collect_messages(const gitledger_error_t* err, void* userdata)
+{
+    (void) err;
+    (*(int*) userdata)++;
+    return true;
+}
+
+typedef struct counting_allocator_state
+{
+    size_t allocations;
+    size_t frees;
+} counting_allocator_state_t;
+
+static void* counting_alloc(void* userdata, size_t size)
+{
+    counting_allocator_state_t* state = (counting_allocator_state_t*) userdata;
+    void*                       ptr   = malloc(size);
+    if (ptr)
+        {
+            state->allocations++;
+        }
+    return ptr;
+}
+
+static void counting_free(void* userdata, void* ptr)
+{
+    counting_allocator_state_t* state = (counting_allocator_state_t*) userdata;
+    if (ptr)
+        {
+            state->frees++;
+        }
+    free(ptr);
+}
+
+static gitledger_context_t* create_counting_context(counting_allocator_state_t* state)
+{
+    gitledger_allocator_t alloc = {
+        .alloc    = counting_alloc,
+        .free     = counting_free,
+        .userdata = state
+    };
+    return gitledger_context_create(&alloc);
+}
+
+static void test_basic_json_behavior(void)
+{
+    gitledger_context_t* ctx = gitledger_context_create(NULL);
+    assert(ctx);
+
+    gitledger_error_t* leaf = GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GIT, GL_CODE_NOT_FOUND,
+                                                     "Object %s not found", "abc123");
+    assert(leaf);
+
+    gitledger_error_t* root = GITLEDGER_ERROR_WITH_CAUSE(ctx, GL_DOMAIN_POLICY, GL_CODE_POLICY_VIOLATION,
+                                                         leaf,
+                                                         "Policy blocked update for %s", "refs/main");
+    assert(root);
+
+    assert(gitledger_error_cause(root) == leaf);
+    assert((gitledger_error_flags(root) & GL_ERRFLAG_PERMANENT) != 0U);
+
+    size_t required = gitledger_error_render_json(root, NULL, 0);
+    assert(required > 1U);
+    char* json_buffer = (char*) malloc(required);
+    assert(json_buffer);
+    size_t actual = gitledger_error_render_json(root, json_buffer, required);
+    assert(actual == required);
+    (void) actual;
+    assert(json_buffer[0] == '{');
+
+    const char* cached = gitledger_error_json(root);
+    assert(cached && cached[0] == '{');
+    const char* cached_again = gitledger_error_json(root);
+    assert(cached == cached_again);
+    assert(strcmp(cached, json_buffer) == 0);
+    (void) cached;
+    (void) cached_again;
+
+    int visited = 0;
+    gitledger_error_walk(root, collect_messages, &visited);
+    assert(visited == 2);
+
+    free(json_buffer);
+    gitledger_error_release(root);
+    gitledger_error_release(leaf);
+    gitledger_context_release(ctx);
+}
+
+static size_t count_occurrences(const char* haystack, const char* needle)
+{
+    size_t count = 0;
+    size_t step  = strlen(needle);
+    const char* cursor = haystack;
+    while ((cursor = strstr(cursor, needle)) != NULL)
+        {
+            ++count;
+            cursor += step;
+        }
+    return count;
+}
+
+static void test_deep_cause_chain(void)
+{
+    gitledger_context_t* ctx = gitledger_context_create(NULL);
+    assert(ctx);
+
+    const size_t depth = 32;
+    gitledger_error_t* current = GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN,
+                                                        "layer %zu", (size_t) 0);
+    assert(current);
+
+    for (size_t i = 1; i < depth; ++i)
+        {
+            gitledger_error_t* next = GITLEDGER_ERROR_WITH_CAUSE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN,
+                                                                 current,
+                                                                 "layer %zu", i);
+            assert(next);
+            gitledger_error_release(current);
+            current = next;
+        }
+
+    size_t required = gitledger_error_render_json(current, NULL, 0);
+    assert(required > 1U);
+    char* json_buffer = (char*) malloc(required);
+    assert(json_buffer);
+    gitledger_error_render_json(current, json_buffer, required);
+
+    const char* pattern = "\"cause\"";
+    size_t cause_occurrences = count_occurrences(json_buffer, pattern);
+    assert(cause_occurrences == depth - 1U);
+    (void) cause_occurrences;
+
+    free(json_buffer);
+    gitledger_error_release(current);
+    gitledger_context_release(ctx);
+}
+
+static void test_allocator_balance(void)
+{
+    counting_allocator_state_t state = {0, 0};
+    gitledger_context_t* ctx         = create_counting_context(&state);
+    assert(ctx);
+
+    gitledger_error_t* base = GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_INVALID_ARGUMENT,
+                                                     "%s", "base error");
+    assert(base);
+
+    gitledger_error_t* top = GITLEDGER_ERROR_WITH_CAUSE(ctx, GL_DOMAIN_GENERIC, GL_CODE_CONFLICT,
+                                                        base,
+                                                        "%s", "top error");
+    assert(top);
+
+    gitledger_error_release(top);
+    gitledger_error_release(base);
+    gitledger_context_release(ctx);
+
+    assert(state.allocations == state.frees);
+}
+
+int main(void)
+{
+    test_basic_json_behavior();
+    test_deep_cause_chain();
+    test_allocator_balance();
+    return 0;
+}

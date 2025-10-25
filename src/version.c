@@ -7,27 +7,27 @@ static const gitledger_semantic_version_t GITLEDGER_VERSION_VALUE = {0, 1, 0};
 
 enum
 {
-    GITLEDGER_VERSION_DECIMAL_DIGIT_CAP = 10,
-    GITLEDGER_VERSION_DECIMAL_BASE      = 10,
+    GL_VERSION_DECIMAL_DIGIT_CAP = 10,
+    GL_VERSION_DECIMAL_BASE      = 10,
     /* 10 digits * 3 + 2 dots + 1 NUL = 33; round up for safety. */
-    GITLEDGER_VERSION_BUFFER_SIZE = 34
+    GL_VERSION_BUFFER_SIZE = 34
 };
 
-static char gitledger_version_buffer[GITLEDGER_VERSION_BUFFER_SIZE];
+static char gitledger_version_buffer[GL_VERSION_BUFFER_SIZE];
 
 static int write_decimal(uint32_t value, char** cursor, size_t* remaining)
 {
-    char   digits[GITLEDGER_VERSION_DECIMAL_DIGIT_CAP];
+    char   digits[GL_VERSION_DECIMAL_DIGIT_CAP];
     size_t idx = 0U;
 
     do
         {
-            if (idx >= sizeof(digits))
+            if (idx >= sizeof digits)
                 {
                     return 0;
                 }
-            digits[idx++] = (char) ('0' + (value % GITLEDGER_VERSION_DECIMAL_BASE));
-            value /= GITLEDGER_VERSION_DECIMAL_BASE;
+            digits[idx++] = (char) ('0' + (value % GL_VERSION_DECIMAL_BASE));
+            value /= GL_VERSION_DECIMAL_BASE;
         }
     while (value != 0U);
 
