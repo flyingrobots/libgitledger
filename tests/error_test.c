@@ -1,6 +1,11 @@
 #include "gitledger/context.h"
 #include "gitledger/error.h"
 
+#ifdef NDEBUG
+static void test_teardown_refusal_with_live_errors(void);
+#endif
+
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -170,7 +175,6 @@ int main(void)
     test_allocator_balance();
 #ifdef NDEBUG
     /* Release builds must refuse context teardown with live errors. */
-    extern void test_teardown_refusal_with_live_errors(void);
     test_teardown_refusal_with_live_errors();
 #endif
     return 0;

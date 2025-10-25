@@ -1,6 +1,6 @@
 project('libgitledger', 'c',
   version: '0.1.0',
-  default_options: ['c_std=c17', 'warning_level=3', 'werror=true']
+  default_options: ['c_std=c99', 'warning_level=3', 'werror=true']
 )
 
 vendor_libgit2 = get_option('vendor_libgit2')
@@ -54,6 +54,7 @@ libgitledger = static_library(
   include_directories: include_dir,
   dependencies: lib_deps,
   c_args: lib_c_args + ['-DGITLEDGER_BUILD'],
+  link_args: ['-nostdlib'],
 )
 
 tests_version = executable(

@@ -99,6 +99,8 @@ start_job() {
         -e RUN_TIDY="${run_tidy}" \
         -e LIBGITLEDGER_SUPPORTS_SANITIZERS="${supports_sanitizers}" \
         -e LIBGITLEDGER_SUPPORTS_ANALYZE="${supports_analyze}" \
+        -e SUPPORTS_SANITIZERS="${supports_sanitizers}" \
+        -e SUPPORTS_ANALYZE="${supports_analyze}" \
         -e LIBGITLEDGER_MATRIX_JOB="${name}" \
         -v "${REPO_ROOT}:/workspace:ro" \
         "${IMAGE_NAME}" \
