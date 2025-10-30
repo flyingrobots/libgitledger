@@ -857,6 +857,15 @@ static void ensure_json_cache_current(gitledger_error_t* err)
         }
 }
 
+/*
+ * JSON cache ownership & lifetime
+ * -------------------------------
+ * - Ownership: the returned pointer is owned by the error object.
+ * - Volatility: the pointer may be invalidated when the context generation
+ *   changes or when another thread publishes a newer cache.
+ * - Stability: callers must copy via gitledger_error_json_copy() if they need
+ *   a stable, long‑lived snapshot.
+ */
 const char* gitledger_error_json(gitledger_error_t* err)
 {
     if (!err)
