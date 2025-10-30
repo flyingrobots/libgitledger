@@ -20,6 +20,7 @@ RUN apt-get update \
         clang-18=1:18.1.3-1ubuntu1 \
         clang-format-18=1:18.1.3-1ubuntu1 \
         clang-tidy-18=1:18.1.3-1ubuntu1 \
+        clang-tools-18=1:18.1.3-1ubuntu1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-14 110 \
