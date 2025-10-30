@@ -19,6 +19,21 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 - Run `make lint` (containerised clang-format + clang-tidy) before submitting a PR. CI enforces the same suite on GCC, Clang, and MSVC.
 - Need to bypass clang-tidy for a quick repro? Run `RUN_TIDY=0 make host-tidy` locally, but flip it back to 1 before shipping anything.
 
+## Git Hooks
+
+- Install the repository hooks to run a format check before every commit:
+
+  ```bash
+  make hooks-install
+  ```
+
+- The `pre-commit` hook executes `make format-check` via the container dispatcher (matching CI). If Docker
+  is not available, it falls back to a host-only lint check. To temporarily skip the check for a commit:
+
+  ```bash
+  SKIP_FORMAT_CHECK=1 git commit -m "..."
+  ```
+
 ## Pull Requests
 
 - Fill out `.github/pull_request_template.md` including the dual-build checklist.

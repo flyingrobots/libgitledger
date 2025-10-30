@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit: run clang-format check in the same way CI does.
+# Default: containerised `make format-check` via the dispatcher.
+# Fallback (no Docker installed): host-format-check with explicit guard.
+
+# Allow opt-out per-commit: SKIP_FORMAT_CHECK=1 git commit -m "..."
+if [[ "${SKIP_FORMAT_CHECK:-0}" == "1" ]]; then
+  echo "[pre-commit] SKIP_FORMAT_CHECK=1 — skipping format check" >&2
+  exit 0
+fi
+
+if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+  echo "[pre-commit] Not in a Git repository; skipping" >&2
+  exit 0
+fi
+cd "${repo_root}"
+
+echo "[pre-commit] Running format-check (containerised)" >&2
+if make -s format-check; then
+  exit 0
+fi
+
+# If Docker is unavailable, fall back to host-format-check (lint-only) with guard acknowledgement.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[pre-commit] Docker not found; falling back to host-format-check" >&2
+  I_KNOW_WHAT_I_AM_DOING=1 make -s host-format-check
+  exit 0
+fi
+
+echo "[pre-commit] format-check failed. Run 'make format' to apply fixes." >&2
+exit 1
+

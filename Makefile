@@ -1,7 +1,7 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
         host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
-        activity-validate log
+        activity-validate log hooks-install hooks-uninstall
 
 all: both
 
@@ -160,3 +160,12 @@ log:
 
 clean:
 	rm -rf build build-debug build-release build-tidy build-asan build-tsan build-analyze meson-debug meson-release meson-* compile_commands.json
+
+# Git hooks
+hooks-install:
+	@git config core.hooksPath tools/hooks
+	@echo "hooks: configured core.hooksPath=tools/hooks"
+
+hooks-uninstall:
+	@git config --unset core.hooksPath || true
+	@echo "hooks: unset core.hooksPath"
