@@ -173,7 +173,7 @@ static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* 
         }
 
     gitledger_error_node_t* node =
-        (gitledger_error_node_t*) gitledger_context_alloc(ctx, sizeof(gitledger_error_node_t));
+        (gitledger_error_node_t*) gitledger_context_alloc(ctx, sizeof(*node));
     if (!node)
         {
             /* Tracking failed — live errors may not be observed at teardown. */
@@ -232,7 +232,7 @@ gitledger_context_t* gitledger_context_create(const gitledger_allocator_t* alloc
         }
 
     gitledger_context_t* ctx =
-        (gitledger_context_t*) alloc.alloc(alloc.userdata, sizeof(gitledger_context_t));
+        (gitledger_context_t*) alloc.alloc(alloc.userdata, sizeof(*ctx));
     if (!ctx)
         {
             return NULL;

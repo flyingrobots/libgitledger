@@ -323,7 +323,7 @@ static char* duplicate_format(gitledger_context_t* ctx, const char* fmt, va_list
 static gitledger_error_t* allocate_error(gitledger_context_t* ctx)
 {
     gitledger_error_t* err =
-        (gitledger_error_t*) gitledger_context_alloc(ctx, sizeof(gitledger_error_t));
+        (gitledger_error_t*) gitledger_context_alloc(ctx, sizeof(*err));
     if (!err)
         {
             return NULL;

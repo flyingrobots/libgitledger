@@ -42,13 +42,18 @@ lib_sources = [
 include_dir = include_directories('libgitledger/include', 'include')
 
 cc = meson.get_compiler('c')
-warn_flags = ['-Wall','-Wextra','-Werror','-pedantic','-Wshadow','-Wconversion','-fvisibility=hidden','-std=c99']
+warn_flags = ['-Wall','-Wextra','-Werror','-pedantic','-Wshadow','-Wconversion','-fvisibility=hidden']
 if cc.has_argument('-Wno-fun')
   warn_flags += ['-Wno-fun']
 endif
 link_flags = []
 if cc.get_id() != 'msvc'
   link_flags += ['-nostdlib']
+endif
+
+exec_link_flags = []
+if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
+  exec_link_flags += link_flags
 endif
 
 
@@ -74,6 +79,7 @@ tests_version = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
+  link_args: exec_link_flags,
   )
 
 test('version', tests_version)
@@ -84,6 +90,7 @@ tests_smoke = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
+  link_args: exec_link_flags,
   )
 
 test('cli_smoke', tests_smoke)
@@ -94,6 +101,7 @@ executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
+  link_args: exec_link_flags,
 )
 
 tests_error = executable(
@@ -102,6 +110,7 @@ tests_error = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
+  link_args: exec_link_flags,
   )
 
 test('error', tests_error)

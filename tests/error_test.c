@@ -117,14 +117,15 @@ static void test_deep_cause_chain(void)
     assert(ctx);
 
     const size_t       depth = 32;
-    gitledger_error_t* current =
-        GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, "layer %zu", (size_t) 0);
+    gitledger_error_t* current = GITLEDGER_ERROR_CREATE(
+        ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, "layer %lu", (unsigned long) 0);
     assert(current);
 
     for (size_t i = 1; i < depth; ++i)
         {
             gitledger_error_t* next = GITLEDGER_ERROR_WITH_CAUSE(
-                ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, current, "layer %zu", i);
+                ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, current, "layer %lu",
+                (unsigned long) i);
             assert(next);
             gitledger_error_release(current);
             current = next;
