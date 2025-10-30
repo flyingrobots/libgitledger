@@ -109,6 +109,40 @@ jobs:
           choco install ninja -y
         shell: pwsh
 
+  freestanding-linux:
+    name: Freestanding (Linux, CRT shim)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build cmake python3-pip rsync
+          python3 -m pip install --upgrade pip
+          python3 -m pip install meson
+
+      - name: Display toolchain versions
+        run: |
+          gcc --version
+          clang --version || true
+          cmake --version
+          meson --version
+
+      - name: Configure CMake (freestanding)
+        run: |
+          cmake -S . -B build-ffs -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON -DGITLEDGER_USE_NOSTDLIB=ON
+          cmake --build build-ffs --target gitledger_ffs_smoke
+          ctest --test-dir build-ffs -R ffs_smoke --output-on-failure
+
+      - name: Configure Meson (freestanding)
+        run: |
+          meson setup meson-ffs --buildtype release -Dexec_nostdlib=true
+          meson compile -C meson-ffs gitledger_ffs_smoke
+          meson test -C meson-ffs --suite ffs_smoke || meson test -C meson-ffs -t 1 ffs_smoke
+
+
       - name: Configure CMake (Ninja)
         run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON
         shell: pwsh

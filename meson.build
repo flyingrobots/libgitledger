@@ -51,11 +51,6 @@ if cc.get_id() != 'msvc'
   link_flags += ['-nostdlib']
 endif
 
-exec_link_flags = []
-if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
-  exec_link_flags += link_flags
-endif
-
 
 lib_deps = []
 lib_c_args = []
@@ -79,7 +74,6 @@ tests_version = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: exec_link_flags,
   )
 
 test('version', tests_version)
@@ -90,7 +84,6 @@ tests_smoke = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: exec_link_flags,
   )
 
 test('cli_smoke', tests_smoke)
@@ -101,7 +94,6 @@ executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: exec_link_flags,
 )
 
 tests_error = executable(
@@ -110,7 +102,21 @@ tests_error = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: exec_link_flags,
   )
 
 test('error', tests_error)
+
+# Freestanding smoke executable (Linux x86_64) — opt-in only
+if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
+  freestanding_sources = ['tests/ffs_smoke.c']
+  crt_sources = ['crt/linux/x86_64/crt0.S']
+  ffs = executable(
+    'gitledger_ffs_smoke',
+    freestanding_sources + crt_sources,
+    include_directories: include_dir,
+    link_with: libgitledger,
+    c_args: warn_flags,
+    link_args: link_flags,
+  )
+  test('ffs_smoke', ffs)
+endif
