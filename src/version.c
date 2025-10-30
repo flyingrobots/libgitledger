@@ -51,54 +51,61 @@ gitledger_semantic_version_t gitledger_semantic_version(void)
     return GITLEDGER_VERSION_VALUE;
 }
 
+static size_t decimal_length(uint32_t value)
+{
+    size_t len = 1U;
+    while (value >= 10U)
+        {
+            value /= 10U;
+            ++len;
+        }
+    return len;
+}
+
 size_t gitledger_semantic_version_snprintf(char* buf, size_t n)
 {
-    if (buf == NULL || n == 0)
+    /* Compute required length up-front to honor snprintf semantics. */
+    const size_t major_len = decimal_length(GITLEDGER_VERSION_VALUE.major);
+    const size_t minor_len = decimal_length(GITLEDGER_VERSION_VALUE.minor);
+    const size_t patch_len = decimal_length(GITLEDGER_VERSION_VALUE.patch);
+    const size_t required  = major_len + 1U + minor_len + 1U + patch_len;
+
+    if (n == 0U)
         {
-            return 0U;
+            /* No write; return the number of chars that would have been written. */
+            return required;
         }
 
-    char*  cursor    = buf;
-    size_t remaining = n;
-
-    if (!write_decimal(GITLEDGER_VERSION_VALUE.major, &cursor, &remaining))
+    if (buf == NULL)
         {
-            return 0U;
+            return required; /* mirror snprintf: behave as if only returning length */
         }
 
-    if (remaining <= 1U)
-        {
-            return 0U;
-        }
+    /* Render into a scratch buffer guaranteed to be large enough, then copy. */
+    char   tmp[GL_VERSION_BUFFER_SIZE];
+    char*  cursor    = tmp;
+    size_t remaining = sizeof tmp;
 
+    (void) write_decimal(GITLEDGER_VERSION_VALUE.major, &cursor, &remaining);
     *cursor++ = '.';
-    remaining--;
-
-    if (!write_decimal(GITLEDGER_VERSION_VALUE.minor, &cursor, &remaining))
-        {
-            return 0U;
-        }
-
-    if (remaining <= 1U)
-        {
-            return 0U;
-        }
-
+    --remaining;
+    (void) write_decimal(GITLEDGER_VERSION_VALUE.minor, &cursor, &remaining);
     *cursor++ = '.';
-    remaining--;
-
-    if (!write_decimal(GITLEDGER_VERSION_VALUE.patch, &cursor, &remaining))
-        {
-            return 0U;
-        }
-
-    if (remaining == 0U)
-        {
-            return 0U;
-        }
-
+    --remaining;
+    (void) write_decimal(GITLEDGER_VERSION_VALUE.patch, &cursor, &remaining);
     *cursor = '\0';
-    return (size_t) (cursor - buf);
+
+    /* Copy up to n-1 bytes and NUL-terminate. */
+    const size_t to_copy = (required < (n - 1U)) ? required : (n - 1U);
+    if (to_copy > 0U)
+        {
+            for (size_t i = 0; i < to_copy; ++i)
+                {
+                    buf[i] = tmp[i];
+                }
+        }
+    buf[to_copy] = '\0';
+    return required;
 }
 
 const char* gitledger_semantic_version_string(void)
