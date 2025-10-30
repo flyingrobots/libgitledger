@@ -792,8 +792,8 @@ gitledger_error_with_cause_ctx_loc(gitledger_context_t* ctx, gitledger_domain_t 
 {
     va_list args;
     va_start(args, fmt);
-    gitledger_error_t* err = gitledger_error_with_cause_ctx_loc_v(ctx, domain, code, cause,
-                                                                  location, fmt, args);
+    gitledger_error_t* err =
+        gitledger_error_with_cause_ctx_loc_v(ctx, domain, code, cause, location, fmt, args);
     va_end(args);
     return err;
 }
