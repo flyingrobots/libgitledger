@@ -1,5 +1,6 @@
 #include "gitledger/version.h"
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,8 +15,9 @@ int main(void)
 
     if (written != expected_len)
         {
-            fprintf(stderr, "version_test: expected snprintf length %zu, got %zu\n", expected_len,
-                    written);
+            fprintf(stderr,
+                    "version_test: expected snprintf length %" PRIuMAX ", got %" PRIuMAX "\n",
+                    (uintmax_t) expected_len, (uintmax_t) written);
             fprintf(stderr, "version_test: buffer contents >>%s<<\n", buffer);
             return 1;
         }
@@ -54,7 +56,8 @@ int main(void)
         size_t ret     = gitledger_semantic_version_snprintf(tiny, 0);
         if (ret != expected_len)
             {
-                fprintf(stderr, "version_test: n=0 expected %zu, got %zu\n", expected_len, ret);
+                fprintf(stderr, "version_test: n=0 expected %" PRIuMAX ", got %" PRIuMAX "\n",
+                        (uintmax_t) expected_len, (uintmax_t) ret);
                 return 1;
             }
         if (tiny[0] != 'X')
@@ -71,7 +74,8 @@ int main(void)
         size_t ret = gitledger_semantic_version_snprintf(small, sizeof small);
         if (ret != expected_len)
             {
-                fprintf(stderr, "version_test: n=5 expected %zu, got %zu\n", expected_len, ret);
+                fprintf(stderr, "version_test: n=5 expected %" PRIuMAX ", got %" PRIuMAX "\n",
+                        (uintmax_t) expected_len, (uintmax_t) ret);
                 return 1;
             }
         if (small[sizeof small - 1] != '\0')

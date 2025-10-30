@@ -1,5 +1,6 @@
 #include "gitledger/context.h"
 
+#include <inttypes.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -138,9 +139,10 @@ static void context_debug_log_live_errors(size_t live_count)
         }
     char   buf[GITLEDGER_CONTEXT_DIAG_BUF];
     size_t length        = 0U;
-    int    written_chars = snprintf(
-        buf, sizeof buf,
-        "gitledger_context_destroy: %zu live error(s) at context teardown (leaked)\n", live_count);
+    int    written_chars = snprintf(buf, sizeof buf,
+                                    "gitledger_context_destroy: %" PRIuMAX
+                                    " live error(s) at context teardown (leaked)\n",
+                                    (uintmax_t) live_count);
     if (written_chars < 0)
         {
             const char* fallback =
@@ -177,10 +179,10 @@ static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* 
     if (!node)
         {
             /* Tracking failed — live errors may not be observed at teardown. */
-            fprintf(stderr,
-                    "GITLEDGER: context_register_error: alloc failed (ctx=%p, err=%p) — "
-                    "lifecycle guard may be impaired\n",
-                    (void*) ctx, (void*) err);
+            (void) fprintf(stderr,
+                           "GITLEDGER: context_register_error: alloc failed (ctx=%p, err=%p) — "
+                           "lifecycle guard may be impaired\n",
+                           (void*) ctx, (void*) err);
             return;
         }
     node->error = err;
