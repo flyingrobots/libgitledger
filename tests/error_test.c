@@ -6,6 +6,7 @@ static void test_teardown_refusal_with_live_errors(void);
 #endif
 
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,8 +71,8 @@ static void test_basic_json_behavior(void)
     assert((gitledger_error_flags(root) & GL_ERRFLAG_PERMANENT) != 0U);
 
     size_t required = gitledger_error_render_json(root, NULL, 0);
-    assert(required > 1U);
-    char* json_buffer = (char*) malloc(required * sizeof *json_buffer);
+    assert(required != SIZE_MAX && required > 1U);
+    char* json_buffer = malloc(sizeof *json_buffer * required);
     assert(json_buffer);
     size_t actual = gitledger_error_render_json(root, json_buffer, required);
     assert(actual == required);
@@ -130,8 +131,8 @@ static void test_deep_cause_chain(void)
         }
 
     size_t required = gitledger_error_render_json(current, NULL, 0);
-    assert(required > 1U);
-    char* json_buffer = (char*) malloc(required * sizeof *json_buffer);
+    assert(required != SIZE_MAX && required > 1U);
+    char* json_buffer = malloc(sizeof *json_buffer * required);
     assert(json_buffer);
     gitledger_error_render_json(current, json_buffer, required);
 
