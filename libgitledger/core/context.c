@@ -99,6 +99,18 @@ static size_t context_count_errors_locked(const gitledger_context_t* ctx)
     return count;
 }
 
+/*
+ * Detach and free the error registry without taking the lock.
+ *
+ * Invariants:
+ * - Call only from the destroy path after the last-release gate has verified
+ *   no new error nodes can be produced (i.e., refcount reached one and we are
+ *   tearing down the context).
+ * - It is safe to access ctx->errors without the lock here because producers
+ *   cannot run concurrently once destruction has been entered.
+ * - Callers are responsible for enforcing these preconditions; do not reuse
+ *   this helper from code paths where new errors may be registered.
+ */
 static size_t context_detach_and_free_error_nodes(gitledger_context_t* ctx)
 {
     gitledger_error_node_t* node = ctx->errors;
@@ -164,6 +176,11 @@ static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* 
         (gitledger_error_node_t*) gitledger_context_alloc(ctx, sizeof(gitledger_error_node_t));
     if (!node)
         {
+            /* Tracking failed — live errors may not be observed at teardown. */
+            fprintf(stderr,
+                    "GITLEDGER: context_register_error: alloc failed (ctx=%p, err=%p) — "
+                    "lifecycle guard may be impaired\n",
+                    (void*) ctx, (void*) err);
             return;
         }
     node->error = err;
@@ -237,7 +254,7 @@ void gitledger_context_retain(gitledger_context_t* ctx)
         }
 }
 
-static void context_destroy(gitledger_context_t* ctx)
+static int context_destroy(gitledger_context_t* ctx)
 {
     /* Enforce lifecycle: destroying with live errors is a contract breach. */
     size_t live       = 0U;
@@ -254,6 +271,7 @@ static void context_destroy(gitledger_context_t* ctx)
         {
             context_debug_log_live_errors(live);
             abort();
+            return 0; /* Unreachable, but silences some compilers. */
         }
 #else
     if (has_errors)
@@ -261,7 +279,7 @@ static void context_destroy(gitledger_context_t* ctx)
             context_debug_log_live_errors(live);
             /* Keep the context alive: bump refcount back and refuse teardown. */
             (void) atomic_fetch_add_explicit(&ctx->refcount, 1U, memory_order_relaxed);
-            return;
+            return 0;
         }
 #endif
 
@@ -272,6 +290,7 @@ static void context_destroy(gitledger_context_t* ctx)
 
     ctx->magic = 0;
     ctx->allocator.free(ctx->allocator.userdata, ctx);
+    return 1;
 }
 
 int gitledger_context_try_release(gitledger_context_t* ctx)
@@ -282,10 +301,9 @@ int gitledger_context_try_release(gitledger_context_t* ctx)
         }
     if (atomic_fetch_sub_explicit(&ctx->refcount, 1U, memory_order_acq_rel) == 1U)
         {
-            context_destroy(ctx);
-            return 1;
+            return context_destroy(ctx); /* 1 = destroyed, 0 = refused due to live errors */
         }
-    return 0;
+    return 0; /* Not last reference */
 }
 
 void gitledger_context_release(gitledger_context_t* ctx)

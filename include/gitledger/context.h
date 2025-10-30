@@ -27,8 +27,12 @@ extern "C"
                        gitledger_context_create(const gitledger_allocator_t* allocator);
     GITLEDGER_API void gitledger_context_retain(gitledger_context_t* ctx);
     GITLEDGER_API void gitledger_context_release(gitledger_context_t* ctx);
-    /* Try to release the context; returns 1 on destroy, 0 when refused due to
-       live errors, and -1 for invalid ctx. Prefer this in new code. */
+    /* Try to release the context.
+       Returns:
+         1 -> destroyed,
+         0 -> not destroyed (either refused due to live errors, or not the last reference),
+        -1 -> invalid ctx.
+       Prefer this in new code. */
     GITLEDGER_API int gitledger_context_try_release(gitledger_context_t* ctx);
 
     GITLEDGER_API int gitledger_context_valid(const gitledger_context_t* ctx);
