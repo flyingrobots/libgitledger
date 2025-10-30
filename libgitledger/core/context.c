@@ -231,8 +231,7 @@ gitledger_context_t* gitledger_context_create(const gitledger_allocator_t* alloc
                 }
         }
 
-    gitledger_context_t* ctx =
-        (gitledger_context_t*) alloc.alloc(alloc.userdata, sizeof(*ctx));
+    gitledger_context_t* ctx = (gitledger_context_t*) alloc.alloc(alloc.userdata, sizeof(*ctx));
     if (!ctx)
         {
             return NULL;
