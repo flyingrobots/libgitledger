@@ -96,31 +96,33 @@ extern "C"
      *   callers must call gitledger_error_retain() if they need the cause to
      *   outlive the parent.
      * - Context teardown: destroying a context with live errors is forbidden.
-     *   In Debug builds, context teardown aborts; in Release builds, teardown
-     *   is refused and a diagnostic is emitted to stderr. Always release all
-     *   errors before releasing their context.
+     *   WHY: this prevents double-free/use-after-free hazards during context
+     *   destruction and ensures snapshot-allocated error state remains safe
+     *   to reference. In Debug builds we abort; in Release builds we refuse
+     *   teardown and emit a diagnostic to stderr. Always release all errors
+     *   before releasing their context.
      */
 
     GITLEDGER_API gitledger_error_t*
     gitledger_error_create_ctx_loc(gitledger_context_t* ctx, gitledger_domain_t domain,
                                    gitledger_code_t code, gitledger_source_location_t location,
-                                   const char* fmt, ...);
+                                   const char* fmt, ...) GITLEDGER_ATTR_PRINTF(5, 6);
 
     GITLEDGER_API gitledger_error_t*
     gitledger_error_create_ctx_loc_v(gitledger_context_t* ctx, gitledger_domain_t domain,
                                      gitledger_code_t code, gitledger_source_location_t location,
-                                     const char* fmt, va_list args);
+                                     const char* fmt, va_list args) GITLEDGER_ATTR_PRINTF(5, 0);
 
     GITLEDGER_API gitledger_error_t*
     gitledger_error_with_cause_ctx_loc(gitledger_context_t* ctx, gitledger_domain_t domain,
                                        gitledger_code_t code, const gitledger_error_t* cause,
-                                       gitledger_source_location_t location, const char* fmt, ...);
+                                       gitledger_source_location_t location, const char* fmt, ...) GITLEDGER_ATTR_PRINTF(6, 7);
 
     GITLEDGER_API gitledger_error_t*
     gitledger_error_with_cause_ctx_loc_v(gitledger_context_t* ctx, gitledger_domain_t domain,
                                          gitledger_code_t code, const gitledger_error_t* cause,
                                          gitledger_source_location_t location, const char* fmt,
-                                         va_list args);
+                                         va_list args) GITLEDGER_ATTR_PRINTF(6, 0);
 
     /* Macros capture caller location at the call-site. Callers must supply a
        format string as the first variadic argument; pass "" when no message
