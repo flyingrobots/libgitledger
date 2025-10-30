@@ -291,6 +291,15 @@ static void gl_json_escape(gl_buf_t* buf, const char* text)
 
 static char* duplicate_format(gitledger_context_t* ctx, const char* fmt, va_list args)
 {
+    if (!fmt || fmt[0] == '\0')
+        {
+            char* empty = (char*) gitledger_context_alloc(ctx, 1U);
+            if (empty)
+                {
+                    empty[0] = '\0';
+                }
+            return empty;
+        }
     va_list copy;
     va_copy(copy, args);
     int needed = gl_safe_vsnprintf(NULL, 0, fmt, copy);

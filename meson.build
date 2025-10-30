@@ -74,7 +74,6 @@ tests_version = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: link_flags,
   )
 
 test('version', tests_version)
@@ -85,7 +84,6 @@ tests_smoke = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: link_flags,
   )
 
 test('cli_smoke', tests_smoke)
@@ -96,7 +94,6 @@ executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: link_flags,
 )
 
 tests_error = executable(
@@ -105,7 +102,6 @@ tests_error = executable(
   include_directories: include_dir,
   link_with: libgitledger,
   c_args: warn_flags,
-  link_args: link_flags,
   )
 
 test('error', tests_error)
