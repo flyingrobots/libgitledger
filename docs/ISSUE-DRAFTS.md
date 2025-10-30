@@ -237,6 +237,57 @@ implement `gitledger_code_t`, `gitledger_error_t`, helpers.
 
 ## [M1] Allocator hooks
 
+## [M2] Linux CRT shim for freestanding executables + CI path
+
+---
+
+title: "[M2] Minimal Linux CRT shim (_start) and freestanding CI job"
+labels: ["milestone::M2", "area::build", "type::enhancement"]
+assignees: []
+---
+
+## Summary
+
+Provide a minimal Linux x86_64 CRT bootstrap (_start) sufficient to run our test executables with `-nostdlib`, and add an opt-in CI job that configures CMake with `-DGITLEDGER_USE_NOSTDLIB=ON` (and Meson with `-Dexec_nostdlib=true`) to validate a clean freestanding path. Keep the main matrix untouched (option OFF by default).
+
+## Links / Context
+
+- Policy: library is always linked with `-nostdlib` on non‑MSVC; executables gated behind `GITLEDGER_USE_NOSTDLIB` (default OFF).
+- CMake option: `GITLEDGER_USE_NOSTDLIB` (OFF by default)
+- Meson option: `exec_nostdlib` (false by default)
+
+## Deliverables
+
+- [ ] `crt/linux/x86_64/crt0.S` (or `.S` + tiny C wrapper) providing `_start` → calls `main(int,char**)`, returns via `exit` syscall
+- [ ] CMake wiring to include CRT objects only when `GITLEDGER_USE_NOSTDLIB=ON` (non‑MSVC)
+- [ ] Meson wiring to include CRT objects only when `-Dexec_nostdlib=true` (non‑MSVC)
+- [ ] GitHub Actions job `freestanding-linux` that:
+  - checks out repo, installs deps
+  - configures CMake `-DGITLEDGER_USE_NOSTDLIB=ON`
+  - builds `gitledger` and test executables
+  - runs a trivial smoke test (e.g., version test) under the shim
+  - runs on `ubuntu-24.04`; `continue-on-error: false` once the shim is stable
+- [ ] Documentation in `CONTRIBUTING.md` describing the option and how to run the freestanding job locally
+
+## Implementation Notes
+
+- Target Linux x86_64 first; add other arches later.
+- Provide raw syscalls: `exit`, `write` (for minimal stderr prints if needed).
+- Avoid any libc references; pass argc/argv/envp from stack per SysV ABI.
+- Guard all CRT sources under a CMake/Meson option so default builds remain unchanged.
+
+## Tests & Verification
+
+- [ ] CI job configures `GITLEDGER_USE_NOSTDLIB=ON` and builds/executes at least one test binary
+- [ ] Local run: `cmake -S . -B build-ffs -DGITLEDGER_USE_NOSTDLIB=ON && cmake --build build-ffs`
+- [ ] Local run (Meson): `meson setup meson-ffs -Dexec_nostdlib=true && meson compile -C meson-ffs`
+
+## Definition of Done
+
+- [ ] CMake + Meson builds succeed with freestanding options on Ubuntu
+- [ ] CI job `freestanding-linux` passes without `continue-on-error`
+- [ ] Docs updated (CONTRIBUTING)
+
 ---
 
 title: "[M1] Allocator hooks"
