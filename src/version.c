@@ -54,9 +54,9 @@ gitledger_semantic_version_t gitledger_semantic_version(void)
 static size_t decimal_length(uint32_t value)
 {
     size_t len = 1U;
-    while (value >= 10U)
+    while (value >= (uint32_t) GL_VERSION_DECIMAL_BASE)
         {
-            value /= 10U;
+            value /= (uint32_t) GL_VERSION_DECIMAL_BASE;
             ++len;
         }
     return len;
