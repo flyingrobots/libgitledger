@@ -116,7 +116,8 @@ extern "C"
     GITLEDGER_API gitledger_error_t*
     gitledger_error_with_cause_ctx_loc(gitledger_context_t* ctx, gitledger_domain_t domain,
                                        gitledger_code_t code, const gitledger_error_t* cause,
-                                       gitledger_source_location_t location, const char* fmt, ...) GITLEDGER_ATTR_PRINTF(6, 7);
+                                       gitledger_source_location_t location, const char* fmt, ...)
+        GITLEDGER_ATTR_PRINTF(6, 7);
 
     GITLEDGER_API gitledger_error_t*
     gitledger_error_with_cause_ctx_loc_v(gitledger_context_t* ctx, gitledger_domain_t domain,
