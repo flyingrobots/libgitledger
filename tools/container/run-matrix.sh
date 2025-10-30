@@ -31,7 +31,7 @@ fi
 
 matrix_configs=(
     $'name=gcc-14\ncc=gcc-14\ncxx=g++-14\nrun_tidy=1'
-    $'name=clang-18\ncc=clang\ncxx=clang++\nrun_tidy=0'
+    $'name=clang-18\ncc=clang\ncxx=clang++\nrun_tidy=1'
 )
 
 max_jobs="${LIBGITLEDGER_MATRIX_JOBS:-0}"
