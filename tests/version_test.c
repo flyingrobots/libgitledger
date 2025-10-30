@@ -51,7 +51,7 @@ int main(void)
     /* snprintf semantics: n==0 must return required length and not write. */
     {
         char   tiny[1] = {'X'}; /* sentinel to detect unintended writes */
-        size_t ret      = gitledger_semantic_version_snprintf(tiny, 0);
+        size_t ret     = gitledger_semantic_version_snprintf(tiny, 0);
         if (ret != expected_len)
             {
                 fprintf(stderr, "version_test: n=0 expected %zu, got %zu\n", expected_len, ret);
@@ -66,7 +66,7 @@ int main(void)
 
     /* Truncation: n=5 must NUL-terminate and return required length. */
     {
-        char   small[5];
+        char small[5];
         memset(small, 'Z', sizeof small);
         size_t ret = gitledger_semantic_version_snprintf(small, sizeof small);
         if (ret != expected_len)
