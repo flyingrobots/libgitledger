@@ -24,13 +24,13 @@ _start:
 
     // Call user main(argc, argv)
     .extern main
-    // Maintain 16-byte stack alignment at function entry per SysV AMD64 ABI.
-    // Kernel enters with RSP aligned to 16; after pushing a return address,
-    // 'call' would make RSP misaligned (16n-8). Adjust by 8 prior to call.
+    // Maintain proper stack alignment for System V AMD64.
+    // The kernel enters with RSP aligned to 16. Align RSP to 16 here so that
+    // after the CALL (which pushes an 8-byte return address) the callee sees
+    // RSP = 16n - 8, which satisfies the ABI. No extra sub/add is needed.
     and     $-16, %rsp
-    sub     $8, %rsp
+    .cfi_def_cfa %rsp, 0
     call    main
-    add     $8, %rsp
 
     // On return: rax = status
     mov     %rax, %rdi           // status -> rdi

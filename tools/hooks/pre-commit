@@ -26,7 +26,8 @@ fi
 if ! command -v docker >/dev/null 2>&1; then
   echo "[pre-commit] Docker not found; falling back to host-format-check" >&2
   I_KNOW_WHAT_I_AM_DOING=1 make -s host-format-check
-  # Successful fallback finishes here; no explicit exit needed.
+  # Successful fallback finishes here.
+  exit 0
 fi
 
 echo "[pre-commit] format-check failed. Run 'make format' to apply fixes." >&2

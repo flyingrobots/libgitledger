@@ -29,9 +29,6 @@ try:
             except json.JSONDecodeError as e:
                 print(f"activity-log: invalid JSON on line {idx}: {e}", file=sys.stderr)
                 sys.exit(1)
-            except UnicodeDecodeError as e:
-                print(f"activity-log: invalid encoding in log file: {e}", file=sys.stderr)
-                sys.exit(1)
             # Accept either summary blocks or activity entries per schema intent.
             if 'timestamp' in obj:
                 branches = obj.get('branches', [])
@@ -63,8 +60,13 @@ try:
                     print(f"activity-log: 'when' must be RFC3339 string on line {idx}", file=sys.stderr)
                     sys.exit(1)
             count += 1
-except OSError as e:
-    print(f"activity-log: cannot open {log_path}: {e}", file=sys.stderr)
+except (OSError, UnicodeDecodeError) as e:
+    # Catch file I/O issues and invalid encoding during read/iterate
+    msg = (
+        f"activity-log: invalid encoding in log file: {e}" if isinstance(e, UnicodeDecodeError)
+        else f"activity-log: cannot open {log_path}: {e}"
+    )
+    print(msg, file=sys.stderr)
     sys.exit(1)
 
 if count == 0:
