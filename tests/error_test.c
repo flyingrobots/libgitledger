@@ -211,10 +211,12 @@ static void test_error_detaches_when_tracking_fails(void)
 
     /* With tracking failed, the context must be destroyable immediately. */
     int rc = gitledger_context_try_release(ctx);
+    (void) rc; /* keep used even under NDEBUG */
     assert(rc == 1);
 
     /* The error must remain usable and releasable without touching a freed ctx. */
     const char* json = gitledger_error_json(err);
+    (void) json; /* keep used even under NDEBUG */
     assert(json && json[0] == '{');
     gitledger_error_release(err);
 }
