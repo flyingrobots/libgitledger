@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libgitledger VERSION 0.1.0 LANGUAGES C)
+project(libgitledger VERSION 0.1.0 LANGUAGES C ASM)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -56,8 +56,7 @@ target_compile_options(gitledger PRIVATE ${PROJECT_WARNING_FLAGS})
 target_compile_definitions(gitledger PRIVATE GITLEDGER_BUILD=1)
 function(add_nostdlib target)
   if(GITLEDGER_USE_NOSTDLIB AND NOT MSVC)
-    # Enable ASM for the CRT shim and link without the system CRT/stdlib.
-    enable_language(ASM)
+    # Link without the system CRT/stdlib; ASM is already enabled project-wide.
     target_sources(${target} PRIVATE crt/linux/x86_64/crt0.S)
     target_link_options(${target} PRIVATE -nostdlib)
   endif()
