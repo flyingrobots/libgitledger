@@ -167,6 +167,28 @@ log:
 clean:
 		rm -rf build build-debug build-release build-tidy build-asan build-tsan build-analyze build-analyze-scan meson-debug meson-release meson-* compile_commands.json
 
+# Celebration: print a small trophy with current commit
+trophy:
+	@sha=$$(git rev-parse --short HEAD); \
+	echo ""; \
+	echo "   Freestanding Trophy (commit $$sha)"; \
+	echo "       ___________"; \
+	echo "      '._==_==_=_.'"; \
+	echo "      .-\\:      /-."; \
+	echo "     | (|:.     |) |"; \
+	echo "      '-|:.     |-'"; \
+	echo "        \\::.    /"; \
+	echo "         '::. .'"; \
+	echo "           ) ("; \
+	echo "         _.' '._"; \
+	echo "        \`\"\"\"\"\"\"\`"; \
+	echo "";
+
+# Symbol policy check: verify freestanding smoke binary pulls no forbidden symbols
+symbols-check:
+	$(HOST_GUARD)
+	@tools/lint/check_symbols.sh
+
 # Git hooks
 hooks-install:
 	@git config core.hooksPath tools/hooks

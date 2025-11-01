@@ -142,6 +142,9 @@ jobs:
           meson compile -C meson-ffs gitledger_ffs_smoke
           meson test -C meson-ffs --suite ffs_smoke || meson test -C meson-ffs -t 1 ffs_smoke
 
+      - name: Symbol policy (smoke binary)
+        run: make symbols-check
+
 
       - name: Configure CMake (Ninja)
         run: cmake -S . -B build-msvc -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON
