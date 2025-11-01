@@ -1,5 +1,8 @@
 # libgitledger
 
+![freestanding](https://img.shields.io/badge/freestanding-ready-005f73)
+![libc: independent](https://img.shields.io/badge/libc-independent-brightgreen)
+
 Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 
 ## Documentation
