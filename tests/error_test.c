@@ -200,7 +200,12 @@ static void test_error_detaches_when_tracking_fails(void)
        1) allocate_error -> gitledger_error_t
        2) duplicate_format -> message buffer
        3) context_register_error -> registry node (we fail here) */
-    failing_allocator_state_t st = {0, 3};
+    /* Allocation call order with custom allocator:
+       1) context_create alloc
+       2) allocate_error (error struct)
+       3) duplicate_format (message buffer)
+       4) context_register_error (registry node) <- we fail here */
+    failing_allocator_state_t st = {0, 4};
     gitledger_allocator_t     alloc = {.alloc = failing_alloc, .free = failing_free, .userdata = &st};
     gitledger_context_t*      ctx   = gitledger_context_create(&alloc);
     assert(ctx);

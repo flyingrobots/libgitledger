@@ -59,13 +59,19 @@ if libgit2_dep.found()
   lib_c_args += ['-DGITLEDGER_HAVE_LIBGIT2=1']
 endif
 
+extra_no_std_cargs = []
+extra_no_std_linkargs = []
+if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
+  extra_no_std_cargs += ['-fno-stack-protector', '-fno-builtin', '-fno-pie']
+endif
+
 libgitledger = static_library(
   'gitledger',
   lib_sources,
   include_directories: include_dir,
   dependencies: lib_deps,
-  c_args: lib_c_args + ['-DGITLEDGER_BUILD'] + warn_flags,
-  link_args: link_flags,
+  c_args: lib_c_args + ['-DGITLEDGER_BUILD'] + warn_flags + extra_no_std_cargs,
+  link_args: link_flags + extra_no_std_linkargs,
   )
 
 tests_version = executable(
@@ -115,8 +121,8 @@ if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
     freestanding_sources + crt_sources,
     include_directories: include_dir,
     link_with: libgitledger,
-    c_args: warn_flags,
-    link_args: link_flags,
+    c_args: warn_flags + ['-fno-stack-protector', '-fno-builtin', '-fno-pie'],
+    link_args: link_flags + ['-no-pie'],
   )
   test('ffs_smoke', ffs)
 endif
