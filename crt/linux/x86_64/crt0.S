@@ -6,6 +6,8 @@
     .globl _start
     .type  _start, @function
 _start:
+    .cfi_startproc
+    .cfi_undefined %rip
     // Stack layout at entry (SysV ABI):
     //   rsp -> argc
     //           argv[0]
@@ -16,6 +18,7 @@ _start:
     //           ...
     //           NULL
     mov     %rsp, %rbp           // Establish a simple frame (optional)
+    .cfi_def_cfa_register %rbp
     mov     (%rsp), %rdi         // rdi = argc
     lea     8(%rsp), %rsi        // rsi = &argv[0]
 
@@ -36,4 +39,5 @@ _start:
 
     // Should never reach here; terminate hard if we do
     hlt
+    .cfi_endproc
     .size _start, .-_start

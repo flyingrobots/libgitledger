@@ -14,7 +14,7 @@
 #endif
 
 /* Portable printf-format checking attribute (GCC/Clang only). */
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__)
 #define GITLEDGER_ATTR_PRINTF(fmt_index, va_index)                                                 \
     __attribute__((format(printf, fmt_index, va_index)))
 #else

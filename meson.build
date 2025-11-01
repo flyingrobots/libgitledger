@@ -42,9 +42,12 @@ lib_sources = [
 include_dir = include_directories('libgitledger/include', 'include')
 
 cc = meson.get_compiler('c')
-warn_flags = ['-Wall','-Wextra','-Werror','-pedantic','-Wshadow','-Wconversion','-fvisibility=hidden']
-if cc.has_argument('-Wno-fun')
-  warn_flags += ['-Wno-fun']
+warn_flags = []
+if cc.get_id() != 'msvc'
+  warn_flags = ['-Wall','-Wextra','-Werror','-pedantic','-Wshadow','-Wconversion','-fvisibility=hidden']
+  if cc.has_argument('-Wno-fun')
+    warn_flags += ['-Wno-fun']
+  endif
 endif
 link_flags = []
 if cc.get_id() != 'msvc'

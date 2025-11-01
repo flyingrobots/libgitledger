@@ -16,7 +16,7 @@ CheckOptions:
   - key: readability-magic-numbers.IgnoredIntegerValues
     value: '0;1;2'
   - key: readability-magic-numbers.IgnoredFloatingPointValues
-    value: ''
+    value: '0.0;1.0'
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
   - key: readability-identifier-naming.StructCase

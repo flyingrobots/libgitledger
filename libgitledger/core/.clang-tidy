@@ -9,6 +9,5 @@ Checks: >
   performance-*,
   portability-*
 WarningsAsErrors: '*'
-HeaderFilterRegex: 'libgitledger/core/.*'
+HeaderFilterRegex: '(libgitledger/core/.*|include/gitledger/.*)'
 FormatStyle: file
-

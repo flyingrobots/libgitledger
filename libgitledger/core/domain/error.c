@@ -130,7 +130,12 @@ static void gl_buf_finalize(gl_buf_t* buf)
 struct gitledger_error
 {
     gitledger_context_t*    ctx;
+    /* Context generation snapshot for cache invalidation; atomic under C11. */
+#if __STDC_VERSION__ >= 201112L
+    _Atomic(uint32_t)       ctx_generation;
+#else
     uint32_t                ctx_generation;
+#endif
     atomic_uint             refcount;
     gitledger_allocator_t   allocator; /* snapshot of allocator for safe frees */
     gitledger_domain_t      domain;
@@ -329,7 +334,14 @@ static gitledger_error_t* allocate_error(gitledger_context_t* ctx)
         }
     gl_safe_memset(err, 0, sizeof(*err));
     err->ctx            = ctx;
-    err->ctx_generation = gitledger_context_generation_snapshot_internal(ctx);
+    {
+        uint32_t snap = gitledger_context_generation_snapshot_internal(ctx);
+#if __STDC_VERSION__ >= 201112L
+        atomic_store_explicit(&err->ctx_generation, snap, memory_order_release);
+#else
+        err->ctx_generation = snap;
+#endif
+    }
     atomic_init(&err->refcount, 1U);
     const gitledger_allocator_t* pal = gitledger_context_allocator(ctx);
     if (pal)
@@ -361,8 +373,12 @@ static void free_error(gitledger_error_t* err)
                     allocator_snapshot.free(allocator_snapshot.userdata, err->message);
                 }
         }
-    err->ctx            = NULL;
+    err->ctx = NULL;
+#if __STDC_VERSION__ >= 201112L
+    atomic_store_explicit(&err->ctx_generation, 0U, memory_order_release);
+#else
     err->ctx_generation = 0U;
+#endif
     if (allocator_snapshot.free)
         {
             allocator_snapshot.free(allocator_snapshot.userdata, err);
@@ -376,8 +392,12 @@ void gitledger_error_detach_context_internal(gitledger_error_t* err)
         {
             return;
         }
-    err->ctx            = NULL;
+    err->ctx = NULL;
+#if __STDC_VERSION__ >= 201112L
+    atomic_store_explicit(&err->ctx_generation, 0U, memory_order_release);
+#else
     err->ctx_generation = 0U;
+#endif
 }
 
 static void write_flags_array(gl_buf_t* buf, gitledger_error_flags_t flags)
@@ -856,7 +876,13 @@ static void ensure_json_cache_current(gitledger_error_t* err)
         }
 
     uint32_t snapshot = gitledger_context_generation_snapshot_internal(err->ctx);
-    if (err->ctx_generation != snapshot)
+    {
+#if __STDC_VERSION__ >= 201112L
+        uint32_t observed = atomic_load_explicit(&err->ctx_generation, memory_order_acquire);
+#else
+        uint32_t observed = err->ctx_generation;
+#endif
+        if (observed != snapshot)
         {
             /* Invalidate cached JSON atomically so only one thread frees it. */
             void* cache_ptr = NULL;
@@ -870,8 +896,14 @@ static void ensure_json_cache_current(gitledger_error_t* err)
                 {
                     gitledger_context_free(err->ctx, cache_ptr);
                 }
+            /* Publish new generation snapshot. */
+#if __STDC_VERSION__ >= 201112L
+            atomic_store_explicit(&err->ctx_generation, snapshot, memory_order_release);
+#else
             err->ctx_generation = snapshot;
+#endif
         }
+    }
 }
 
 /*

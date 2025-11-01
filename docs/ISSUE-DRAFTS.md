@@ -239,12 +239,9 @@ implement `gitledger_code_t`, `gitledger_error_t`, helpers.
 
 ## [M2] Linux CRT shim for freestanding executables + CI path
 
----
-
 title: "[M2] Minimal Linux CRT shim (_start) and freestanding CI job"
 labels: ["milestone::M2", "area::build", "type::enhancement"]
 assignees: []
----
 
 ## Summary
 

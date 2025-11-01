@@ -158,8 +158,8 @@ activity-validate:
 log:
 	@tools/log_activity_dispatch.sh
 
-clean:
-	rm -rf build build-debug build-release build-tidy build-asan build-tsan build-analyze meson-debug meson-release meson-* compile_commands.json
+	clean:
+		rm -rf build build-debug build-release build-tidy build-asan build-tsan build-analyze build-analyze-scan meson-debug meson-release meson-* compile_commands.json
 
 # Git hooks
 hooks-install:
