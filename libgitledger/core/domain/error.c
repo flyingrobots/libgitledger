@@ -136,10 +136,10 @@ struct gitledger_error
 #else
     uint32_t ctx_generation;
 #endif
-    atomic_uint           refcount;
+    atomic_uint refcount;
     gitledger_allocator_t allocator; /* snapshot of allocator for safe frees */
-    gitledger_domain_t    domain;
-    gitledger_code_t      code;
+    gitledger_domain_t domain;
+    gitledger_code_t code;
     gitledger_error_flags_t flags;
     char* message;
 #if __STDC_VERSION__ >= 201112L
