@@ -748,7 +748,16 @@ static gitledger_error_t* create_error_internal(gitledger_context_t* ctx, gitled
             err->cause = (gitledger_error_t*) cause;
         }
 
-    gitledger_context_track_error_internal(ctx, err);
+    /* If the context fails to register this error (e.g., allocator OOM for the
+       registry node), returning an error still pointing at the context is unsafe:
+       the context might be destroyed later, leaving err->ctx dangling and any
+       subsequent release/json walk would dereference freed memory. Detach the
+       association if tracking fails; callers still own the error via its
+       snapshot allocator and can safely release it. */
+    if (!gitledger_context_track_error_internal(ctx, err))
+        {
+            gitledger_error_detach_context_internal(err);
+        }
     return err;
 }
 

@@ -13,7 +13,9 @@ extern "C"
 
     struct gitledger_error;
 
-    void     gitledger_context_track_error_internal(gitledger_context_t*    ctx,
+    /* Returns true when the error is successfully tracked (registered) in the
+       context registry; false when tracking failed (e.g., allocator OOM). */
+    bool     gitledger_context_track_error_internal(gitledger_context_t*    ctx,
                                                     struct gitledger_error* err);
     void     gitledger_context_untrack_error_internal(gitledger_context_t*    ctx,
                                                       struct gitledger_error* err);

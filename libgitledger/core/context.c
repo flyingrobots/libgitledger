@@ -167,11 +167,11 @@ static void context_debug_log_live_errors(size_t live_count)
     (void) fwrite(buf, 1U, length, stderr);
 }
 
-static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* err)
+static bool context_register_error(gitledger_context_t* ctx, gitledger_error_t* err)
 {
     if (!context_is_valid(ctx))
         {
-            return;
+            return false;
         }
 
     gitledger_error_node_t* node =
@@ -183,7 +183,7 @@ static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* 
                            "GITLEDGER: context_register_error: alloc failed (ctx=%p, err=%p) — "
                            "lifecycle guard may be impaired\n",
                            (void*) ctx, (void*) err);
-            return;
+            return false;
         }
     node->error = err;
 
@@ -191,6 +191,8 @@ static void context_register_error(gitledger_context_t* ctx, gitledger_error_t* 
     node->next  = ctx->errors;
     ctx->errors = node;
     context_unlock(ctx);
+
+    return true;
 }
 
 static void context_unregister_error(gitledger_context_t* ctx, gitledger_error_t* err)
@@ -336,9 +338,9 @@ void gitledger_context_free(gitledger_context_t* ctx, void* ptr)
 }
 
 /* Internal hooks used by the error subsystem */
-void gitledger_context_track_error_internal(gitledger_context_t* ctx, gitledger_error_t* err)
+bool gitledger_context_track_error_internal(gitledger_context_t* ctx, gitledger_error_t* err)
 {
-    context_register_error(ctx, err);
+    return context_register_error(ctx, err);
 }
 
 void gitledger_context_untrack_error_internal(gitledger_context_t* ctx, gitledger_error_t* err)
