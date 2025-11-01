@@ -136,21 +136,21 @@ struct gitledger_error
 #else
     uint32_t ctx_generation;
 #endif
-    atomic_uint refcount;
-    gitledger_allocator_t allocator; /* snapshot of allocator for safe frees */
-    gitledger_domain_t domain;
-    gitledger_code_t code;
+    atomic_uint             refcount;
+    gitledger_allocator_t   allocator; /* snapshot of allocator for safe frees */
+    gitledger_domain_t      domain;
+    gitledger_code_t        code;
     gitledger_error_flags_t flags;
-    char* message;
+    char*                   message;
 #if __STDC_VERSION__ >= 201112L
     _Atomic(void*) json_cache; /* published via CAS; freed via atomic exchange */
 #else
     void* json_cache; /* non-atomic fallback under C99 */
 #endif
     gitledger_error_t* cause;
-    const char* file;
-    const char* func;
-    int line;
+    const char*        file;
+    const char*        func;
+    int                line;
 };
 
 static gitledger_error_flags_t default_flags(gitledger_domain_t domain, gitledger_code_t code)
@@ -361,7 +361,7 @@ static void free_error(gitledger_error_t* err)
 #if __STDC_VERSION__ >= 201112L
             cache_ptr = atomic_exchange(&err->json_cache, NULL);
 #else
-            cache_ptr = err->json_cache;
+            cache_ptr       = err->json_cache;
             err->json_cache = NULL;
 #endif
             if (cache_ptr)
@@ -883,26 +883,26 @@ static void ensure_json_cache_current(gitledger_error_t* err)
         uint32_t observed = err->ctx_generation;
 #endif
         if (observed != snapshot)
-        {
-            /* Invalidate cached JSON atomically so only one thread frees it. */
-            void* cache_ptr = NULL;
+            {
+                /* Invalidate cached JSON atomically so only one thread frees it. */
+                void* cache_ptr = NULL;
 #if __STDC_VERSION__ >= 201112L
-            cache_ptr = atomic_exchange(&err->json_cache, NULL);
+                cache_ptr = atomic_exchange(&err->json_cache, NULL);
 #else
-            cache_ptr       = err->json_cache;
-            err->json_cache = NULL;
+                cache_ptr       = err->json_cache;
+                err->json_cache = NULL;
 #endif
-            if (cache_ptr)
-                {
-                    gitledger_context_free(err->ctx, cache_ptr);
-                }
-            /* Publish new generation snapshot. */
+                if (cache_ptr)
+                    {
+                        gitledger_context_free(err->ctx, cache_ptr);
+                    }
+                    /* Publish new generation snapshot. */
 #if __STDC_VERSION__ >= 201112L
-            atomic_store_explicit(&err->ctx_generation, snapshot, memory_order_release);
+                atomic_store_explicit(&err->ctx_generation, snapshot, memory_order_release);
 #else
-            err->ctx_generation = snapshot;
+                err->ctx_generation = snapshot;
 #endif
-        }
+            }
     }
 }
 

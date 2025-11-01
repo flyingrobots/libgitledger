@@ -205,18 +205,17 @@ static void test_error_detaches_when_tracking_fails(void)
        2) allocate_error (error struct)
        3) duplicate_format (message buffer)
        4) context_register_error (registry node) <- we fail here */
-    failing_allocator_state_t st = {0, 4};
-    gitledger_allocator_t alloc = {
-        .alloc = failing_alloc,
-        .free = failing_free,
-        .userdata = &st,
+    failing_allocator_state_t st    = {0, 4};
+    gitledger_allocator_t     alloc = {
+            .alloc    = failing_alloc,
+            .free     = failing_free,
+            .userdata = &st,
     };
     gitledger_context_t* ctx = gitledger_context_create(&alloc);
     assert(ctx);
 
     gitledger_error_t* err =
-        GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, "%s",
-                               "track failure path");
+        GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN, "%s", "track failure path");
     assert(err);
 
     /* With tracking failed, the context must be destroyable immediately. */
