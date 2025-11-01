@@ -168,11 +168,63 @@ static void test_allocator_balance(void)
     assert(state.allocations == state.frees);
 }
 
+typedef struct failing_allocator_state
+{
+    size_t calls;
+    size_t fail_at; /* 1-based: return NULL on this allocation call */
+} failing_allocator_state_t;
+
+static void* failing_alloc(void* userdata, size_t size)
+{
+    failing_allocator_state_t* st = (failing_allocator_state_t*) userdata;
+    st->calls++;
+    if (st->fail_at != 0 && st->calls == st->fail_at)
+        {
+            (void) size;
+            return NULL; /* simulate OOM at specific allocation */
+        }
+    return malloc(size);
+}
+
+static void failing_free(void* userdata, void* ptr)
+{
+    (void) userdata;
+    free(ptr);
+}
+
+static void test_error_detaches_when_tracking_fails(void)
+{
+    fprintf(stderr, "test_error_detaches_when_tracking_fails\n");
+
+    /* Allocation sequence in error creation:
+       1) allocate_error -> gitledger_error_t
+       2) duplicate_format -> message buffer
+       3) context_register_error -> registry node (we fail here) */
+    failing_allocator_state_t st = {0, 3};
+    gitledger_allocator_t     alloc = {.alloc = failing_alloc, .free = failing_free, .userdata = &st};
+    gitledger_context_t*      ctx   = gitledger_context_create(&alloc);
+    assert(ctx);
+
+    gitledger_error_t* err = GITLEDGER_ERROR_CREATE(ctx, GL_DOMAIN_GENERIC, GL_CODE_UNKNOWN,
+                                                    "%s", "track failure path");
+    assert(err);
+
+    /* With tracking failed, the context must be destroyable immediately. */
+    int rc = gitledger_context_try_release(ctx);
+    assert(rc == 1);
+
+    /* The error must remain usable and releasable without touching a freed ctx. */
+    const char* json = gitledger_error_json(err);
+    assert(json && json[0] == '{');
+    gitledger_error_release(err);
+}
+
 int main(void)
 {
     test_basic_json_behavior();
     test_deep_cause_chain();
     test_allocator_balance();
+    test_error_detaches_when_tracking_fails();
 #ifdef NDEBUG
     /* Release builds must refuse context teardown with live errors. */
     test_teardown_refusal_with_live_errors();

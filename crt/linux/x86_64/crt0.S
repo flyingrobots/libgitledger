@@ -21,7 +21,13 @@ _start:
 
     // Call user main(argc, argv)
     .extern main
+    // Maintain 16-byte stack alignment at function entry per SysV AMD64 ABI.
+    // Kernel enters with RSP aligned to 16; after pushing a return address,
+    // 'call' would make RSP misaligned (16n-8). Adjust by 8 prior to call.
+    and     $-16, %rsp
+    sub     $8, %rsp
     call    main
+    add     $8, %rsp
 
     // On return: rax = status
     mov     %rax, %rdi           // status -> rdi
@@ -31,4 +37,3 @@ _start:
     // Should never reach here; terminate hard if we do
     hlt
     .size _start, .-_start
-
