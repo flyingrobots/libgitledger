@@ -212,6 +212,10 @@ Format it cleanly. Log it honestly.
 
 You are not a developer. You are a scribe of the system’s truth.
 
+### Host Execution Guard (Reaffirmed)
+
+Running build or test targets against the host working tree is forbidden unless a maintainer explicitly approves it. Use the containerized dispatcher targets (e.g., `make cmake`, `make test-both`) which mirror CI and protect `.git/`. If you believe a host run is necessary, halt and ask.
+
 ### 10. Git push and ask the human: should I open a PR?
 
 Do not open one without permission. Use `gh` if allowed.

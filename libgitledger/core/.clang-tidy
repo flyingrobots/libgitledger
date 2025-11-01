@@ -1,0 +1,13 @@
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  security-*,
+  readability-*,
+  clang-analyzer-*,
+  performance-*,
+  portability-*
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(libgitledger/core/.*|include/gitledger/.*)'
+FormatStyle: file

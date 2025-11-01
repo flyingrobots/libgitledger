@@ -30,8 +30,8 @@ else
 fi
 
 matrix_configs=(
-    $'name=gcc-14\ncc=gcc-14\ncxx=g++-14\nrun_tidy=1'
-    $'name=clang-18\ncc=clang\ncxx=clang++\nrun_tidy=0'
+    $'name=gcc-14\ncc=gcc-14\ncxx=g++-14\nrun_tidy=1\nanalyze=1'
+    $'name=clang-18\ncc=clang\ncxx=clang++\nrun_tidy=1\nanalyze=1'
 )
 
 max_jobs="${LIBGITLEDGER_MATRIX_JOBS:-0}"
@@ -47,6 +47,8 @@ start_job() {
     local cc=""
     local cxx=""
     local run_tidy="1"
+    local supports_sanitizers="0"
+    local supports_analyze="0"
 
     while IFS= read -r pair; do
         [[ -z "${pair}" ]] && continue
@@ -57,6 +59,8 @@ start_job() {
             cc) cc="${value}" ;;
             cxx) cxx="${value}" ;;
             run_tidy) run_tidy="${value}" ;;
+            sanitizers) supports_sanitizers="${value}" ;;
+            analyze) supports_analyze="${value}" ;;
         esac
     done <<< "${config}"
 
@@ -67,6 +71,16 @@ start_job() {
 
     if [[ "${TARGET}" == "tidy" && "${run_tidy}" != "1" ]]; then
         echo "[container:${name}] Skipping target ${TARGET} (RUN_TIDY=0)"
+        return 2
+    fi
+
+    if [[ "${TARGET}" == "sanitizers" && "${supports_sanitizers}" != "1" ]]; then
+        echo "[container:${name}] Skipping target ${TARGET} (sanitizers unsupported)"
+        return 2
+    fi
+
+    if [[ "${TARGET}" == "analyze" && "${supports_analyze}" != "1" ]]; then
+        echo "[container:${name}] Skipping target ${TARGET} (analyzer unsupported)"
         return 2
     fi
 
@@ -83,6 +97,9 @@ start_job() {
         -e CC="${cc}" \
         -e CXX="${cxx}" \
         -e RUN_TIDY="${run_tidy}" \
+        -e LIBGITLEDGER_SUPPORTS_SANITIZERS="${supports_sanitizers}" \
+        -e LIBGITLEDGER_SUPPORTS_ANALYZE="${supports_analyze}" \
+        -e LIBGITLEDGER_IN_CONTAINER=true \
         -e LIBGITLEDGER_MATRIX_JOB="${name}" \
         -v "${REPO_ROOT}:/workspace:ro" \
         "${IMAGE_NAME}" \

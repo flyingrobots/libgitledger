@@ -96,6 +96,62 @@ if [[ ! -f "${filtered_db}" ]]; then
   exit 1
 fi
 
+# Strip flags that clang-tidy's parser rejects even if the compile DB
+# originated from GCC (e.g., -Wno-fun which is non-standard/joke). This keeps
+# tidy from failing on unknown-warning-option.
+python3 - "$filtered_db" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+path = sys.argv[1]
+
+def fatal(msg: str) -> None:
+    sys.stderr.write(f"clang-tidy: {msg}\n")
+    sys.exit(1)
+
+try:
+    with open(path, 'r', encoding='utf-8') as f:
+        entries = json.load(f)
+except json.JSONDecodeError as exc:
+    fatal(f"invalid JSON in {path}: {exc}")
+except OSError as exc:
+    fatal(f"unable to read {path}: {exc}")
+
+changed = False
+for e in entries:
+    if isinstance(e, dict) and 'arguments' in e and isinstance(e['arguments'], list):
+        args = [a for a in e['arguments'] if a != '-Wno-fun']
+        if args != e['arguments']:
+            e['arguments'] = args
+            changed = True
+    if isinstance(e, dict) and 'command' in e and isinstance(e['command'], str):
+        if ' -Wno-fun' in e['command']:
+            e['command'] = e['command'].replace(' -Wno-fun', '')
+            changed = True
+
+if not changed:
+    sys.exit(0)
+
+tmp = None
+try:
+    dir_name = os.path.dirname(path) or '.'
+    with tempfile.NamedTemporaryFile(delete=False, dir=dir_name, mode='w', encoding='utf-8') as tf:
+        tmp = tf.name
+        json.dump(entries, tf, indent=2)
+        tf.flush()
+        os.fsync(tf.fileno())
+    os.replace(tmp, path)
+except OSError as exc:
+    if tmp:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    fatal(f"unable to update {path}: {exc}")
+PY
+
 if [[ ${#filtered_sources[@]} -eq 0 ]]; then
   echo "clang-tidy: no eligible C sources after filtering" >&2
   echo "Set CLANG_TIDY_ALLOWED_ROOTS to expand the search if this was unexpected" >&2

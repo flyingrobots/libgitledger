@@ -3,15 +3,20 @@ Checks: >
   bugprone-*,
   cert-*,
   clang-analyzer-*,
+  clang-diagnostic-*,
   concurrency-*,
   misc-*,
   performance-*,
   portability-*,
   readability-*,
-  # Numeric literals remain in-line for domain-defined constants; revisit if we centralize them.
-  -readability-magic-numbers
+  security-*
 WarningsAsErrors: '*'
 CheckOptions:
+  # Be strict on magic numbers but allow common sentinel/bit values.
+  - key: readability-magic-numbers.IgnoredIntegerValues
+    value: '0;1;2'
+  - key: readability-magic-numbers.IgnoredFloatingPointValues
+    value: '0.0;1.0'
   - key: readability-identifier-naming.TypedefCase
     value: lower_case
   - key: readability-identifier-naming.StructCase
@@ -23,7 +28,7 @@ CheckOptions:
   - key: readability-identifier-naming.EnumConstantCase
     value: UPPER_CASE
   - key: readability-identifier-naming.EnumConstantPrefix
-    value: 'GITLEDGER_'
+    value: 'GL_'
   - key: readability-identifier-naming.FunctionCase
     value: lower_case
   - key: readability-identifier-naming.FunctionPrefix

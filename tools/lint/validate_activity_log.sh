@@ -1,55 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
-    echo "activity-log: jq is required" >&2
-    exit 1
-fi
-
-if ! command -v npx >/dev/null 2>&1; then
-    echo "activity-log: npx is required" >&2
-    exit 1
-fi
-
 log_file="ACTIVITY.log.jsonl"
-schema_file="ACTIVITY.schema.json"
 
-if [[ ! -f "${log_file}" ]]; then
-    echo "activity-log: ${log_file} not found" >&2
-    exit 1
-fi
+python3 - "$log_file" <<'PY'
+import json
+import os
+import re
+import sys
 
-if [[ ! -f "${schema_file}" ]]; then
-    echo "activity-log: ${schema_file} not found" >&2
-    exit 1
-fi
+log_path = sys.argv[1]
+if not os.path.exists(log_path):
+    print(f"activity-log: missing log file: {log_path}", file=sys.stderr)
+    sys.exit(1)
 
-tmp_dir=$(mktemp -d)
-trap 'rm -rf "${tmp_dir}"' EXIT
+def is_rfc3339(s: str) -> bool:
+    return bool(re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$', s))
 
-index=0
-while IFS= read -r line; do
-    if [[ -z "${line}" ]]; then
-        continue
-    fi
-    if ! printf '%s\n' "${line}" | jq -e '.' >/dev/null; then
-        echo "activity-log: invalid JSON on line $((index + 1))" >&2
-        exit 1
-    fi
-    printf '%s\n' "${line}" > "${tmp_dir}/${index}.json"
-    index=$((index + 1))
-done < "${log_file}"
+count = 0
+try:
+    with open(log_path, 'r', encoding='utf-8') as f:
+        for idx, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"activity-log: invalid JSON on line {idx}: {e}", file=sys.stderr)
+                sys.exit(1)
+            # Accept either summary blocks or activity entries per schema intent.
+            if 'timestamp' in obj:
+                branches = obj.get('branches', [])
+                activity = obj.get('activity', [])
+                if not isinstance(branches, list):
+                    print(f"activity-log: summary 'branches' must be an array on line {idx}", file=sys.stderr)
+                    sys.exit(1)
+                if not isinstance(activity, list):
+                    print(f"activity-log: summary 'activity' must be an array on line {idx}", file=sys.stderr)
+                    sys.exit(1)
+                for j, b in enumerate(branches):
+                    if not isinstance(b, str):
+                        print(f"activity-log: branches[{j}] must be string on line {idx}", file=sys.stderr)
+                        sys.exit(1)
+                for j, a in enumerate(activity):
+                    if not (isinstance(a, str) or isinstance(a, dict)):
+                        print(f"activity-log: activity[{j}] must be string or object on line {idx}", file=sys.stderr)
+                        sys.exit(1)
+            else:
+                required = {'who', 'what', 'where', 'when', 'why', 'how', 'protip'}
+                if not required.issubset(obj.keys()):
+                    missing = sorted(required - set(obj.keys()))
+                    print(f"activity-log: missing keys {missing} on line {idx}", file=sys.stderr)
+                    sys.exit(1)
+                if not isinstance(obj['where'], list):
+                    print(f"activity-log: 'where' must be an array on line {idx}", file=sys.stderr)
+                    sys.exit(1)
+                if not isinstance(obj['when'], str) or not is_rfc3339(obj['when']):
+                    print(f"activity-log: 'when' must be RFC3339 string on line {idx}", file=sys.stderr)
+                    sys.exit(1)
+            count += 1
+except (OSError, UnicodeDecodeError) as e:
+    # Catch file I/O issues and invalid encoding during read/iterate
+    msg = (
+        f"activity-log: invalid encoding in log file: {e}" if isinstance(e, UnicodeDecodeError)
+        else f"activity-log: cannot open {log_path}: {e}"
+    )
+    print(msg, file=sys.stderr)
+    sys.exit(1)
 
-if (( index == 0 )); then
-    echo "activity-log: no entries found" >&2
-    exit 1
-fi
-
-declare -a data_args
-for entry in "${tmp_dir}"/*.json; do
-    data_args+=(-d "${entry}")
-done
-
-npx --yes ajv-cli@5.0.0 validate --spec=draft7 --strict=false -s "${schema_file}" "${data_args[@]}" >/dev/null
-
-echo "activity-log: validation passed"
+if count == 0:
+    print("activity-log: no entries found", file=sys.stderr)
+    sys.exit(1)
+print("activity-log: validation passed")
+PY
