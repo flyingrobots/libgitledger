@@ -142,12 +142,18 @@ analyze:
 
 host-analyze:
 	$(HOST_GUARD)
-	@if ! command -v $(CLANG_ANALYZER) >/dev/null 2>&1; then \
-		echo "scan-build (clang analyzer) is required for host-analyze"; \
-		exit 1; \
-	fi
-	cmake -S . -B build-analyze -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-	$(CLANG_ANALYZER) --status-bugs -o build-analyze-scan cmake --build build-analyze
+	@an=""; \
+	if command -v $(CLANG_ANALYZER) >/dev/null 2>&1; then \
+		an="$(CLANG_ANALYZER)"; \
+	elif command -v scan-build-18 >/dev/null 2>&1; then \
+		an=scan-build-18; \
+	elif command -v scan-build >/dev/null 2>&1; then \
+		an=scan-build; \
+	else \
+		echo "scan-build (clang analyzer) is required for host-analyze"; exit 1; \
+	fi; \
+	cmake -S . -B build-analyze -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD=99 -DCMAKE_C_STANDARD_REQUIRED=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON; \
+	"$${an}" --status-bugs -o build-analyze-scan cmake --build build-analyze
 
 markdownlint:
 	@files="$(shell git ls-files '*.md')"; if [ -z "$$files" ]; then echo "markdownlint: no markdown files found"; else $(MARKDOWNLINT) $(MARKDOWNLINT_ARGS) $$files; fi

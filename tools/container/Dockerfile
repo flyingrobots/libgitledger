@@ -30,7 +30,8 @@ RUN update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-14 110 \
     && ln -sf /usr/bin/clang-18 /usr/local/bin/clang \
     && ln -sf /usr/bin/clang++-18 /usr/local/bin/clang++ \
     && ln -sf /usr/bin/clang-format-18 /usr/local/bin/clang-format \
-    && ln -sf /usr/bin/clang-tidy-18 /usr/local/bin/clang-tidy
+    && ln -sf /usr/bin/clang-tidy-18 /usr/local/bin/clang-tidy \
+    && ln -sf /usr/bin/scan-build-18 /usr/local/bin/scan-build
 
 WORKDIR /workspace
 
