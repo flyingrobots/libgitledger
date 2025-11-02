@@ -129,3 +129,17 @@ if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
   )
   test('ffs_smoke', ffs)
 endif
+# Compliance harness (non-installed, optional helper lib)
+compliance_sources = [
+  'src/compliance/report.c',
+  'src/compliance/checks_core.c',
+  'src/compliance/checks_policy.c',
+  'src/compliance/checks_wasm.c',
+  'src/compliance/suite.c',
+]
+static_library('gitledger_compliance',
+  compliance_sources,
+  include_directories: include_dir,
+  c_args: warn_flags,
+  install: false,
+)
