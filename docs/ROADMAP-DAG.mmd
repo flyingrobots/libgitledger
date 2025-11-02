@@ -1,4 +1,16 @@
+%%{init: { 'theme': 'base', 'flowchart': { 'useMaxWidth': false, 'nodeSpacing': 40, 'rankSpacing': 50, 'curve': 'basis' } }}%%
 flowchart TD
+  %% Node class definitions (milestones)
+  classDef M0Node stroke:#8e44ad,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M1Node stroke:#2c3e50,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M2Node stroke:#16a085,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M3Node stroke:#2980b9,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M4Node stroke:#27ae60,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M5Node stroke:#e67e22,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M6Node stroke:#c0392b,stroke-width:2px,fill:#ffffff,color:#111;
+  classDef M7Node stroke:#7f8c8d,stroke-width:2px,fill:#ffffff,color:#111;
+  %% Root nodes (no incoming edges)
+  classDef root fill:#eaffea,stroke:#2ecc40,stroke-width:3px,color:#111;
   subgraph "M0 — Repo Scaffolding & Tooling"
     N4["#4 CI scaffolding"]
   end
@@ -82,27 +94,30 @@ flowchart TD
     N38["#38 Documentation and examples"]
     N39["#39 End-to-end tests"]
   end
-  N53 --> N51
-  N56 --> N55
-  N57 --> N55
-  N50 --> N51
-  N50 --> N52
-  N50 --> N53
-  N54 --> N55
-  N54 --> N56
-  N54 --> N57
-  N58 --> N62
-  N58 --> N63
-  N58 --> N64
-  N59 --> N65
-  N59 --> N66
-  N59 --> N67
-  N60 --> N68
-  N60 --> N69
-  N60 --> N70
-  N61 --> N71
-  N61 --> N72
-  N61 --> N73
+  %% Soft relationships (epic/parent -> child)
+  N50 -.-> N51
+  N50 -.-> N52
+  N50 -.-> N53
+  N54 -.-> N55
+  N54 -.-> N56
+  N54 -.-> N57
+  N58 -.-> N62
+  N58 -.-> N63
+  N58 -.-> N64
+  N59 -.-> N65
+  N59 -.-> N66
+  N59 -.-> N67
+  N60 -.-> N68
+  N60 -.-> N69
+  N60 -.-> N70
+  N61 -.-> N71
+  N61 -.-> N72
+  N61 -.-> N73
+
+  %% Hard dependencies (task -> prerequisite)
+  N53 ==> N51
+  N56 ==> N55
+  N57 ==> N55
   N13 --> N12
   N14 --> N10
   N15 --> N13
@@ -128,3 +143,38 @@ flowchart TD
   N20 --> N25
   N29 --> N26
   N29 --> N27
+
+  %% Assign milestone classes to nodes
+  class N4 M0Node;
+  class N6,N7,N8,N9 M1Node;
+  class N10,N11,N12,N13,N14,N15,N47 M2Node;
+  class N16,N17,N18,N19,N20,N50,N51,N52,N53,N54,N55,N56,N57,N58,N62,N63,N64 M3Node;
+  class N21,N22,N23,N24,N25,N59,N60,N65,N66,N67,N68,N69,N70 M4Node;
+  class N26,N27,N28,N29,N61,N71,N72,N73 M5Node;
+  class N30,N31,N32,N33,N34,N35 M6Node;
+  class N36,N37,N38,N39 M7Node;
+
+  %% Highlight root nodes
+  style N4 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N6 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N7 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N8 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N9 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N11 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N15 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N18 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N19 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N21 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N24 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N28 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N29 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N35 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N36 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N38 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N39 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N47 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N50 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N54 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N58 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N59 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N61 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
