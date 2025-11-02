@@ -12,7 +12,7 @@ Why it matters
 
 ASCII Cup
 
-```
+```text
        ___________
       '._==_==_=_.'
       .-\:      /-.
@@ -27,4 +27,3 @@ ASCII Cup
 
 Append-only truth: this file stands as a witness to the day the ledger sailed
 without libc. Keep the ship steady by guarding the symbol policy in CI.
-

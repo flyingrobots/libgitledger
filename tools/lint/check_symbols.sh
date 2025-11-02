@@ -18,7 +18,7 @@ if [[ ${#targets[@]} -eq 0 ]]; then
   exit 0
 fi
 
-deny_re='(^|[^A-Za-z0-9_])(printf|fprintf|vprintf|vfprintf|puts|gets|scanf|sscanf|getenv|atexit|__libc_start_main|__stack_chk_fail)($|[^A-Za-z0-9_])'
+deny_re='(^|[^A-Za-z0-9_])(printf|fprintf|vprintf|vfprintf|puts|gets|scanf|sscanf|getenv|atexit|__libc_start_main|__stack_chk_fail|malloc|free|calloc|realloc|strlen|strcpy|strcmp|memcpy|memset|exit|abort)($|[^A-Za-z0-9_])'
 
 fail=0
 for bin in "${targets[@]}"; do
@@ -27,14 +27,16 @@ for bin in "${targets[@]}"; do
     continue
   fi
   # Unresolved symbols should be none; additionally grep strings for deny-list hints.
-  if nm -u "$bin" | grep -E '.' >/dev/null 2>&1; then
+  nm_out=$(nm -u "$bin" 2>&1 || true)
+  if [[ -n "$nm_out" ]]; then
     echo "symbols-check: unexpected unresolved symbols in ${bin}" >&2
-    nm -u "$bin" >&2 || true
+    echo "$nm_out" | sed 's/^/  /' >&2
     fail=1
   fi
-  if strings -a "$bin" | grep -E "$deny_re" >/dev/null 2>&1; then
+  str_hits=$(strings -a "$bin" | grep -E "$deny_re" || true)
+  if [[ -n "$str_hits" ]]; then
     echo "symbols-check: forbidden symbol reference detected in ${bin}" >&2
-    strings -a "$bin" | grep -E "$deny_re" | sed 's/^/  /' >&2 || true
+    echo "$str_hits" | sed 's/^/  /' >&2
     fail=1
   fi
 done
@@ -43,4 +45,3 @@ if [[ $fail -ne 0 ]]; then
   exit 1
 fi
 echo "symbols-check: OK"
-
