@@ -44,3 +44,31 @@
 | Dependency placeholders | 3 | Backlog | M0 |  | Keep |
 | Dual build system bootstrap | 2 | Backlog | M0 |  | Keep |
 | Scaffold repo layout | 1 | Backlog | M0 |  | Keep |
+
+
+## M3
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M3] Public API v0.1 docs + visibility | 50 | Solidify core | Parent feature; header export audit + docs artifact |
+| [M3][API] Add Doxygen config + CMake target | 51 | Solidify core | — |
+| [M3][API] Annotate public headers with brief/group | 52 | Solidify core | — |
+| [M3][API] CI job: build + upload API docs artifact | 53 | Hardening and portability | — |
+| [M3] CLI scaffold + examples | 54 | Make it useful | Parent feature; minimal CLI with examples |
+| [M3][CLI] Subcommand framework + help | 55 | Make it useful | — |
+| [M3][CLI] Implement 'version' command | 56 | Make it useful | — |
+| [M3][CLI] Implement 'error-demo' command | 57 | Make it useful | — |
+| [M3] Windows DLL export audit + shared build CI | 58 | Hardening and portability | Ensure exports, run tests on windows-latest |
+
+## M4
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M4] Fuzzing harness for errors/version | 59 | Prove integrity | libFuzzer targets for error JSON and snprintf |
+| [M4] libgit2 adapter (read-only) skeleton | 60 | Solidify core | Adapter interface + open/list objects |
+
+## M5
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M5] Symbol-policy guard for archives (cross-platform) | 61 | Hardening and portability | Deny/allow enforcement for lib archives on all OSes |
