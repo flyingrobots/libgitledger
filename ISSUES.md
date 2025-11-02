@@ -72,3 +72,30 @@
 | Issue Title | Issue Id | Roadmap Area | Remarks |
 |---|---:|---|---|
 | [M5] Symbol-policy guard for archives (cross-platform) | 61 | Hardening and portability | Deny/allow enforcement for lib archives on all OSes |
+
+## M3
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M3][Win] Audit GITLEDGER_API exports for DLL | 62 | Hardening and portability | Confirm only intended symbols exported |
+| [M3][Win] Add MSVC shared build + test job | 63 | Hardening and portability | Add Windows shared build to CI and run tests |
+| [M3][Win] Fix printf/PRIuMAX and headers for MSVC | 64 | Hardening and portability | Ensure MSVC-safe format macros and headers |
+
+## M4
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M4][Fuzz] error_json fuzzer | 65 | Prove integrity | libFuzzer target for error JSON |
+| [M4][Fuzz] version_snprintf fuzzer | 66 | Prove integrity | libFuzzer target for version snprintf |
+| [M4][Fuzz] CI lane (10s per target) | 67 | Hardening and portability | Optional short-budget fuzzing lane |
+| [M4][git2] Define adapter interface header | 68 | Solidify core | Introduce adapter abstraction and flag |
+| [M4][git2] Implement open repository + fixtures | 69 | Solidify core | Add open_repo() and seed tiny repo |
+| [M4][git2] List commits (iterator) | 70 | Solidify core | Iterator returns minimal commit rows |
+
+## M5
+
+| Issue Title | Issue Id | Roadmap Area | Remarks |
+|---|---:|---|---|
+| [M5][sym] Linux archive policy (nm) | 71 | Hardening and portability | Enforce allow/deny on .a via nm/objdump |
+| [M5][sym] macOS archive policy (nm -U) | 72 | Hardening and portability | Enforce allow/deny on .a via nm -U |
+| [M5][sym] Windows archive policy (.lib) | 73 | Hardening and portability | Enforce allow/deny on .lib via dumpbin/llvm-nm |
