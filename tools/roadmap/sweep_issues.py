@@ -91,9 +91,10 @@ def repo_owner_name() -> Tuple[str, str]:
     return owner, name
 
 
-def issue_node_id(number: int) -> str:
-    out = run(["gh", "issue", "view", str(number), "--json", "id", "--jq", ".id"])  # GraphQL node id
-    return out.strip()
+def rest_issue_numeric_id(number: int) -> int:
+    owner, repo = repo_owner_name()
+    data = json.loads(run(["gh", "api", f"repos/{owner}/{repo}/issues/{number}"]))
+    return int(data["id"])  # internal numeric issue id (not the visible number)
 
 
 def ensure_milestone(number: int, milestone_title: str, milestone_label: str | None = None) -> None:
@@ -117,29 +118,30 @@ def ensure_milestone(number: int, milestone_title: str, milestone_label: str | N
 
 
 def add_blocked_by(blocked_number: int, blocking_number: int) -> None:
-    blocked_id = issue_node_id(blocked_number)
-    blocking_id = issue_node_id(blocking_number)
-    query = """
-    mutation($issueId:ID!, $blockingIssueId:ID!){
-      addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){
-        issue{ id }
-        blockingIssue{ id }
-      }
-    }
+    """Wire a hard dependency using the REST Issue Dependencies API.
+
+    blocked_number: the visible issue number that is blocked
+    blocking_number: the visible issue number that blocks it
     """
-    variables = {"issueId": blocked_id, "blockingIssueId": blocking_id}
+    owner, repo = repo_owner_name()
+    blocking_id = rest_issue_numeric_id(blocking_number)
     try:
-        run(["gh", "api", "graphql", "-f", f"query={query}", "-f", f"variables={json.dumps(variables)}"])
+        run([
+            "gh", "api", "-X", "POST",
+            f"repos/{owner}/{repo}/issues/{blocked_number}/dependencies/blocked_by",
+            "-f", f"issue_id={blocking_id}",
+            "-H", "X-GitHub-Api-Version: 2022-11-28",
+        ])
     except RuntimeError as e:
-        # Ignore if already linked or forbidden by policy; surface others
-        if "already has a 'blocked by' relationship" in str(e) or "GraphQL: Redundant" in str(e):
+        msg = str(e)
+        # 422 if dependency already exists or invalid
+        if "422" in msg or "Validation failed" in msg or "already exists" in msg:
             return
-        if "cannot be blocked by itself" in str(e):
+        # 404/403: ignore silently to keep sweep idempotent for private/missing issues
+        if "404" in msg or "403" in msg:
             return
-        # Soft ignore permissions issues
-        if "Resource not accessible" in str(e):
-            return
-        raise
+        # Do not block the sweep
+        print(f"warn: REST add blocked-by #{blocked_number} <- #{blocking_number}: {msg}")
 
 
 def post_dependencies_comment(number: int, hard_prereqs: List[int], parents: List[int], children: List[int]) -> None:
