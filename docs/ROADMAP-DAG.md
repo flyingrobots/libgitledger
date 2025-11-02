@@ -1,3 +1,9 @@
+# Roadmap Task DAG (Full)
+
+This diagram captures the dependency graph across ALL open issues, grouped by milestone.
+
+
+```mermaid
 flowchart TD
   subgraph "M0 — Repo Scaffolding & Tooling"
     N4["#4 CI scaffolding"]
@@ -82,6 +88,7 @@ flowchart TD
     N38["#38 Documentation and examples"]
     N39["#39 End-to-end tests"]
   end
+
   N53 --> N51
   N56 --> N55
   N57 --> N55
@@ -128,3 +135,5 @@ flowchart TD
   N20 --> N25
   N29 --> N26
   N29 --> N27
+```
+
