@@ -34,14 +34,17 @@ const config = {
         title: 'libgitledger',
         hideOnScroll: false,
         items: [
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */ ({
+      mermaid: {
+        theme: { light: 'neutral', dark: 'dark' },
+      },
+      navbar: {
+        title: 'libgitledger',
+        items: [
           { to: '/docs', label: 'Docs', position: 'left' },
           { to: '/docs/ROADMAP-DAG', label: 'Roadmap', position: 'left' },
-          { 
-            href: 'https://github.com/flyingrobots/libgitledger', 
-            label: 'GitHub', 
-            position: 'right',
-            'aria-label': 'GitHub repository'
-          },
+          { href: 'https://github.com/flyingrobots/libgitledger', label: 'GitHub', position: 'right' },
         ],
       },
       footer: {
