@@ -176,15 +176,33 @@ hooks-uninstall:
 	@git config --unset core.hooksPath || true
 	@echo "hooks: unset core.hooksPath"
 # Roadmap helpers
+PYTHON ?= python3
+
 .PHONY: roadmap-render roadmap-sweep roadmap-validate roadmap-refresh
 
 roadmap-render:
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "docker is required for roadmap-render" >&2; exit 1; \
+	fi
 	@docker run --rm -v "$(PWD)/docs:/data" minlag/mermaid-cli -i /data/ROADMAP-DAG.mmd -o /data/ROADMAP-DAG.svg
 
 roadmap-sweep:
-	@python3 tools/roadmap/sweep_issues.py
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "$(PYTHON) not found; cannot run roadmap-sweep" >&2; exit 1; \
+	fi
+	@if [ ! -f tools/roadmap/sweep_issues.py ]; then \
+		echo "tools/roadmap/sweep_issues.py not found" >&2; exit 1; \
+	fi
+	@$(PYTHON) tools/roadmap/sweep_issues.py
 
 roadmap-validate:
-	@python3 tools/roadmap/validate_dag.py
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "$(PYTHON) not found; cannot run roadmap-validate" >&2; exit 1; \
+	fi
+	@if [ ! -f tools/roadmap/validate_dag.py ]; then \
+		echo "tools/roadmap/validate_dag.py not found" >&2; exit 1; \
+	fi
+	@$(PYTHON) tools/roadmap/validate_dag.py
 
-roadmap-refresh: roadmap-validate roadmap-render
+roadmap-refresh:
+	@$(MAKE) roadmap-validate && $(MAKE) roadmap-render

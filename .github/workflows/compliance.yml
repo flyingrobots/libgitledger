@@ -27,4 +27,3 @@ jobs:
         with:
           name: compliance.json
           path: compliance.json
-

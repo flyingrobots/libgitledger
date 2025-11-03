@@ -12,11 +12,14 @@ if command -v python3 >/dev/null 2>&1; then
     }
   fi
   echo "[pre-push] Validating activity log..."
-  make -s activity-validate || {
-    echo "[pre-push] Activity log invalid" >&2
-    exit 1
-  }
+  if command -v make >/dev/null 2>&1; then
+    make -s activity-validate || {
+      echo "[pre-push] Activity log invalid" >&2
+      exit 1
+    }
+  else
+    echo "[pre-push] 'make' not found; skipping activity log validation" >&2
+  fi
 fi
 
 exit 0
-

@@ -45,7 +45,7 @@ def main():
 
     # Basic syntax lint via mermaid-cli if available (optional)
     try:
-        run(["docker", "run", "--rm", "-v", f"{MMD.parent.resolve() }:/data", "minlag/mermaid-cli", "-i", "/data/ROADMAP-DAG.mmd", "-o", "/data/.lint.svg"])
+        run(["docker", "run", "--rm", "-v", f"{MMD.parent.resolve()}:/data", "minlag/mermaid-cli", "-i", "/data/ROADMAP-DAG.mmd", "-o", "/data/.lint.svg"])
     except Exception as e:
         print(f"validate_dag: warning: mermaid lint skipped: {e}")
 
@@ -66,4 +66,3 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
-
