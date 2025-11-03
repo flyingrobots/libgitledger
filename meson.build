@@ -137,9 +137,22 @@ compliance_sources = [
   'src/compliance/checks_wasm.c',
   'src/compliance/suite.c',
 ]
-static_library('gitledger_compliance',
+compliance_lib = static_library('gitledger_compliance',
   compliance_sources,
   include_directories: include_dir,
   c_args: warn_flags,
   install: false,
 )
+
+# Optional compliance smoke test links the helper lib to ensure it compiles.
+tests_comp_smoke = executable(
+  'gitledger_compliance_smoke',
+  'tests/compliance_smoke.c',
+  include_directories: include_dir,
+  link_with: [libgitledger, compliance_lib],
+  objects: [
+    # link objects from the static helper to avoid installation
+  ],
+  c_args: warn_flags,
+)
+test('compliance_smoke', tests_comp_smoke)
