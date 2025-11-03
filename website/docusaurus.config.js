@@ -2,6 +2,7 @@
 const config = {
   title: 'libgitledger',
   tagline: 'Git-native, append-only ledger core',
+  description: 'Git-native, append-only ledger core in C. Documentation and developer resources.',
   url: 'https://flyingrobots.github.io',
   baseUrl: '/libgitledger/',
   onBrokenLinks: 'throw',
@@ -10,6 +11,15 @@ const config = {
   organizationName: 'flyingrobots',
   projectName: 'libgitledger',
   trailingSlash: false,
+  headTags: [
+    {
+      tagName: 'meta',
+      attributes: {
+        property: 'og:image',
+        content: 'https://flyingrobots.github.io/libgitledger/img/og-image.png',
+      },
+    },
+  ],
   markdown: { mermaid: true },
   themes: ['@docusaurus/theme-mermaid'],
   presets: [
