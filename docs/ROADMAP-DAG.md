@@ -1,0 +1,114 @@
+# Roadmap Task DAG (Full)
+
+This diagram captures the dependency graph across ALL open issues.
+
+
+```mermaid
+flowchart TD
+  N4["#4 CI scaffolding"]
+  N6["#6 Error API"]
+  N7["#7 Allocator hooks"]
+  N8["#8 Logger hooks"]
+  N9["#9 Context lifecycle"]
+  N10["#10 Git repo port interface"]
+  N11["#11 libgit2 adapter"]
+  N12["#12 Ledger lifecycle"]
+  N13["#13 Append path"]
+  N14["#14 Read path"]
+  N15["#15 Append/read integration tests"]
+  N16["#16 Policy document storage"]
+  N17["#17 Policy parser"]
+  N18["#18 Author identity port"]
+  N19["#19 Append enforcement"]
+  N20["#20 Policy enforcement tests"]
+  N21["#21 Trust document storage"]
+  N22["#22 Signature port"]
+  N23["#23 Commit signature validation"]
+  N24["#24 Attestation support"]
+  N25["#25 Threshold enforcement"]
+  N26["#26 Notes API"]
+  N27["#27 Tag association"]
+  N28["#28 CLI enhancements"]
+  N29["#29 Notes and tags integration tests"]
+  N30["#30 Indexer interface"]
+  N31["#31 CRoaring integration"]
+  N32["#32 Cache writer"]
+  N33["#33 Query engine"]
+  N34["#34 CLI query commands"]
+  N35["#35 Query integration tests"]
+  N36["#36 Deep verify"]
+  N37["#37 BLAKE3 checksum option"]
+  N38["#38 Documentation and examples"]
+  N39["#39 End-to-end tests"]
+  N47["#47 Minimal Linux CRT shim (_start) and f..."]
+  N50["#50 Public API v0.1 docs + visibility"]
+  N51["#51 Add Doxygen config + CMake target"]
+  N52["#52 Annotate public headers with brief/group"]
+  N53["#53 CI job: build + upload API docs artifact"]
+  N54["#54 CLI scaffold + examples"]
+  N55["#55 Subcommand framework + help"]
+  N56["#56 Implement 'version' command"]
+  N57["#57 Implement 'error-demo' command"]
+  N58["#58 Windows DLL export audit + shared bui..."]
+  N59["#59 Fuzzing harness for errors/version"]
+  N60["#60 libgit2 adapter (read-only) skeleton"]
+  N61["#61 Symbol-policy guard for archives (cro..."]
+  N62["#62 Audit GITLEDGER_API exports for DLL"]
+  N63["#63 Add MSVC shared build + test job"]
+  N64["#64 Fix printf/PRIuMAX and headers for MSVC"]
+  N65["#65 error_json fuzzer"]
+  N66["#66 version_snprintf fuzzer"]
+  N67["#67 CI lane (10s per target)"]
+  N68["#68 Define adapter interface header"]
+  N69["#69 Implement open repository + fixtures"]
+  N70["#70 List commits (iterator)"]
+  N71["#71 Linux archive policy (nm)"]
+  N72["#72 macOS archive policy (nm -U)"]
+  N73["#73 Windows archive policy (.lib)"]
+  N53 --> N51
+  N56 --> N55
+  N57 --> N55
+  N50 --> N51
+  N50 --> N52
+  N50 --> N53
+  N54 --> N55
+  N54 --> N56
+  N54 --> N57
+  N58 --> N62
+  N58 --> N63
+  N58 --> N64
+  N59 --> N65
+  N59 --> N66
+  N59 --> N67
+  N60 --> N68
+  N60 --> N69
+  N60 --> N70
+  N61 --> N71
+  N61 --> N72
+  N61 --> N73
+  N13 --> N12
+  N14 --> N10
+  N15 --> N13
+  N15 --> N14
+  N11 --> N10
+  N32 --> N30
+  N33 --> N30
+  N33 --> N31
+  N33 --> N32
+  N34 --> N33
+  N35 --> N33
+  N35 --> N34
+  N36 --> N37
+  N36 --> N33
+  N39 --> N33
+  N39 --> N34
+  N39 --> N60
+  N23 --> N22
+  N24 --> N23
+  N25 --> N17
+  N25 --> N16
+  N20 --> N17
+  N20 --> N25
+  N29 --> N26
+  N29 --> N27
+```
