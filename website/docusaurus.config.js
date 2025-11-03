@@ -20,7 +20,6 @@ const config = {
           path: '../docs',
           routeBasePath: '/docs',
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: undefined,
         },
         blog: false,
         theme: {
