@@ -32,10 +32,16 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */ ({
       navbar: {
         title: 'libgitledger',
+        hideOnScroll: false,
         items: [
           { to: '/docs', label: 'Docs', position: 'left' },
           { to: '/docs/ROADMAP-DAG', label: 'Roadmap', position: 'left' },
-          { href: 'https://github.com/flyingrobots/libgitledger', label: 'GitHub', position: 'right' },
+          { 
+            href: 'https://github.com/flyingrobots/libgitledger', 
+            label: 'GitHub', 
+            position: 'right',
+            'aria-label': 'GitHub repository'
+          },
         ],
       },
       footer: {
