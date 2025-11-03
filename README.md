@@ -18,6 +18,15 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
 - Issue drafts can be copied from `docs/ISSUE-DRAFTS.md`; regenerate with `python3 tools/automation/generate_issue_drafts.py` after editing the breakdown.
 - Pull requests must follow `.github/pull_request_template.md` and exercise both build systems (CMake + Meson).
 - See `CONTRIBUTING.md` for detailed workflow expectations.
+- Submodules: this repo uses Git submodules (e.g., `external/ledger-kernel`). Clone with submodules or
+  initialise them after cloning:
+
+  ```bash
+  git clone --recursive https://github.com/flyingrobots/libgitledger.git
+  # or, for an existing checkout
+  git submodule update --init --recursive
+  ```
+  Skipping `--recursive` leaves `external/ledger-kernel/` empty and may break tools that read the spec.
 - Quickstart for contributors:
   - Install repo hooks once: `make hooks-install` (pre-commit runs `make format-check` in containers like CI).
   - Temporarily bypass the format gate for a commit: `SKIP_FORMAT_CHECK=1 git commit -m "..."`.

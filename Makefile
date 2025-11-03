@@ -1,8 +1,8 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
         host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
-	activity-validate log hooks-install hooks-uninstall
-	activity-validate log hooks-install hooks-uninstall trophy symbols-check
+	activity-validate log hooks-install hooks-uninstall trophy symbols-check \
+	roadmap-render roadmap-sweep roadmap-validate roadmap-refresh
 
 all: both
 

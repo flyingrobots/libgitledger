@@ -39,6 +39,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The main CI build/tests do not require submodules; make this explicit.
+          submodules: false
 
       - name: Install dependencies
         run: |

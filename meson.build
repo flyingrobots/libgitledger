@@ -150,9 +150,6 @@ tests_comp_smoke = executable(
   'tests/compliance_smoke.c',
   include_directories: include_dir,
   link_with: [libgitledger, compliance_lib],
-  objects: [
-    # link objects from the static helper to avoid installation
-  ],
   c_args: warn_flags,
 )
 test('compliance_smoke', tests_comp_smoke)
