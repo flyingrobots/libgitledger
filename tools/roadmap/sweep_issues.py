@@ -53,7 +53,10 @@ def parse_mmd(path: Path) -> Dag:
     # Capture subgraph titles to propagate milestone names
     subgraph_re = re.compile(r"^\s*subgraph\s+\"([^\"]+)\"\s*$")
     node_re = re.compile(r"^\s*(N\d+)\[\"(#(\d+)\s+[^\"]*)\"\]\s*$")
-    hard_re = re.compile(r"^\s*(N\d+)\s*==>\s*(N\d+)\s*$")
+    # Hard deps can be denoted by either a thick arrow '==>' (our convention)
+    # or the standard Mermaid connector '-->' (commonly used in our DAG).
+    hard_re_thick = re.compile(r"^\s*(N\d+)\s*==>\s*(N\d+)\s*$")
+    hard_re_std   = re.compile(r"^\s*(N\d+)\s*-->\s*(N\d+)\s*$")
     soft_re = re.compile(r"^\s*(N\d+)\s*-.->\s*(N\d+)\s*$")
 
     for line in src.splitlines():
@@ -74,9 +77,12 @@ def parse_mmd(path: Path) -> Dag:
             if current_ms:
                 dag.milestone_by_node[node] = current_ms
             continue
-        m = hard_re.match(line)
+        m = hard_re_thick.match(line) or hard_re_std.match(line)
         if m:
-            dag.hard_edges.append((m.group(1), m.group(2)))
+            edge = (m.group(1), m.group(2))
+            # Avoid duplicate edges
+            if edge not in dag.hard_edges:
+                dag.hard_edges.append(edge)
             continue
         m = soft_re.match(line)
         if m:
