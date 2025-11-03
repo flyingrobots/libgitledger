@@ -1,6 +1,6 @@
 # Drift Report: libgitledger vs. Ledger‑Kernel Spec
 
-Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Date: 2025-11-03T22:48:13Z
 
 This report compares our current roadmap (issues + DAG) to the Ledger‑Kernel specification in `external/ledger-kernel`.
 
