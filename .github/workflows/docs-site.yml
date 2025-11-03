@@ -38,6 +38,17 @@ jobs:
       - name: Build site
         working-directory: website
         run: npm run build
+      - name: Validate build output
+        run: |
+          if [ ! -f "website/build/index.html" ]; then
+            echo "Error: index.html not found in build output"
+            exit 1
+          fi
+          if [ ! -d "website/build/docs" ]; then
+            echo "Error: docs directory not found in build output"
+            exit 1
+          fi
+          echo "Build validation passed"
       - name: Configure Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
