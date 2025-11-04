@@ -64,7 +64,13 @@ int lk_comp_run_policy(lk_comp_suite* s);
 /** Run the wasm checks. Mirrors lk_comp_run_core semantics. */
 int lk_comp_run_wasm(lk_comp_suite* s);
 
-/** Write JSON report to out_path. Returns 0 on success; -1 on I/O error. */
+/**
+ * Write a JSON report to the given path.
+ *
+ * Returns 0 on success; -1 on error. Errors include invalid or NULL input
+ * parameters, structural validation failures of the suite (e.g., inconsistent
+ * case/clause arrays), and I/O errors while writing the file.
+ */
 int lk_comp_report_write(const lk_comp_suite* s, const char* out_path);
 
 /**
