@@ -9,19 +9,21 @@
  * - FAIL: One or more required checks failed.
  * - NA: Not applicable or not yet implemented on this platform/config.
  */
-typedef enum {
-  LK_COMP_PASS = 0,
-  LK_COMP_PARTIAL = 1,
-  LK_COMP_FAIL = 2,
-  LK_COMP_NA = 3
+typedef enum
+{
+    LK_COMP_PASS    = 0,
+    LK_COMP_PARTIAL = 1,
+    LK_COMP_FAIL    = 2,
+    LK_COMP_NA      = 3
 } lk_comp_status;
 
-typedef struct {
-  const char* id;               // e.g., "C-1"
-  const char** clauses;         // non-owning: must outlive lk_comp_case
-  size_t nclauses;
-  lk_comp_status status;
-  const char* notes;            // optional
+typedef struct
+{
+    const char*    id;      // e.g., "C-1"
+    const char**   clauses; // non-owning: must outlive lk_comp_case
+    size_t         nclauses;
+    lk_comp_status status;
+    const char*    notes; // optional
 } lk_comp_case;
 
 /**
@@ -30,16 +32,18 @@ typedef struct {
  * cases[i].id/clauses[j]/notes and the implementation/version pointers are
  * non-owning and must outlive the suite.
  */
-typedef struct {
-  const char* implementation;   // e.g., libgitledger (non-owning)
-  const char* version;          // from library (non-owning)
-  lk_comp_case* cases;          // owning array allocated by suite
-  size_t ncases;
-  struct {
-    lk_comp_status core;
-    lk_comp_status policy;
-    lk_comp_status wasm;
-  } summary;
+typedef struct
+{
+    const char*   implementation; // e.g., libgitledger (non-owning)
+    const char*   version;        // from library (non-owning)
+    lk_comp_case* cases;          // owning array allocated by suite
+    size_t        ncases;
+    struct
+    {
+        lk_comp_status core;
+        lk_comp_status policy;
+        lk_comp_status wasm;
+    } summary;
 } lk_comp_suite;
 
 int lk_comp_run_core(lk_comp_suite* s);

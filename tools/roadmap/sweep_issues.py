@@ -103,15 +103,28 @@ def rest_issue_numeric_id(number: int) -> int:
     return int(data["id"])  # internal numeric issue id (not the visible number)
 
 
+def list_all_milestones(owner: str, repo: str) -> List[dict]:
+    milestones = []
+    page = 1
+    while True:
+        chunk = json.loads(run(["gh", "api", f"repos/{owner}/{repo}/milestones", "-f", "state=all", "-f", "per_page=100", "-f", f"page={page}"]))
+        if not isinstance(chunk, list) or not chunk:
+            break
+        milestones.extend(chunk)
+        if len(chunk) < 100:
+            break
+        page += 1
+    return milestones
+
 def ensure_milestone(number: int, milestone_title: str, milestone_label: str | None = None) -> None:
     # Assign milestone if missing or different
     info = json.loads(run(["gh", "issue", "view", str(number), "--json", "milestone,labels"]))
     current = info.get("milestone", {}).get("title") if info.get("milestone") else None
     if current != milestone_title:
-        # Ensure milestone exists; create if missing
+        # Ensure milestone exists; create if missing (page all milestones)
         owner, repo = repo_owner_name()
-        existing = json.loads(run(["gh", "api", f"repos/{owner}/{repo}/milestones?state=all"]))
-        titles = {m["title"] for m in existing}
+        existing = list_all_milestones(owner, repo)
+        titles = {m.get("title") for m in existing if isinstance(m, dict)}
         if milestone_title not in titles:
             # Create milestone
             run(["gh", "api", f"repos/{owner}/{repo}/milestones", "-f", f"title={milestone_title}", "-f", "state=open"])
@@ -174,7 +187,22 @@ def post_dependencies_comment(number: int, hard_prereqs: List[int], parents: Lis
         lines.append(f"  I{number}-.->I{c}")
     lines.append("```")
     body = "\n".join(lines)
-    run(["gh", "issue", "comment", str(number), "--body", body])
+    # Idempotent upsert: edit existing auto-generated comment if present, else create new
+    owner, repo = repo_owner_name()
+    try:
+      comments = json.loads(run(["gh","api", f"repos/{owner}/{repo}/issues/{number}/comments"]))
+    except RuntimeError:
+      comments = []
+    header = "### Dependencies (auto-generated from ROADMAP-DAG.mmd)"
+    existing = None
+    for c in comments:
+        if isinstance(c, dict) and c.get("user",{}).get("login") and (c.get("body") or "").startswith(header):
+            existing = c
+            break
+    if existing and "id" in existing:
+        run(["gh","api", f"repos/{owner}/{repo}/issues/comments/{existing['id']}", "-X","PATCH","-f", f"body={body}"])
+    else:
+        run(["gh", "issue", "comment", str(number), "--body", body])
 
 
 def main() -> int:
