@@ -69,16 +69,32 @@ extern "C"
     int lk_comp_run_core(lk_comp_suite* s);
 
     /**
-     * Run the policy checks. Mirrors lk_comp_run_core semantics.
-     * Precondition: `s` must be non-NULL.
-     * Returns 0 on success; -1 on error (including NULL input).
+     * Run the policy checks.
+     *
+     * Precondition:
+     *  - `s` must be non-NULL.
+     *
+     * Semantics:
+     *  - On success, only updates `s->summary.policy`. It does not allocate,
+     *    free, or otherwise mutate `s->cases`.
+     *
+     * Returns:
+     *  - 0 on success; -1 on error (including NULL input).
      */
     int lk_comp_run_policy(lk_comp_suite* s);
 
     /**
-     * Run the wasm checks. Mirrors lk_comp_run_core semantics.
-     * Precondition: `s` must be non-NULL.
-     * Returns 0 on success; -1 on error (including NULL input).
+     * Run the wasm checks.
+     *
+     * Precondition:
+     *  - `s` must be non-NULL.
+     *
+     * Semantics:
+     *  - On success, only updates `s->summary.wasm`. It does not allocate,
+     *    free, or otherwise mutate `s->cases`.
+     *
+     * Returns:
+     *  - 0 on success; -1 on error (including NULL input).
      */
     int lk_comp_run_wasm(lk_comp_suite* s);
 
