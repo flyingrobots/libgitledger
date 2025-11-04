@@ -5,6 +5,9 @@ int lk_comp_run_core(lk_comp_suite* s)
 {
     if (!s)
         return -1;
+    /* Reset summary for this group before attempting allocation so a failure
+       path leaves a consistent NA state. */
+    s->summary.core = LK_COMP_NA;
     // Skeleton: populate minimal cases and mark N/A or PARTIAL where pending.
     // If re-invoked, explicitly free/reset the cases array to avoid leaks
     // without coupling to lk_comp_suite_free() internals.

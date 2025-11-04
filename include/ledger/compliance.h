@@ -27,12 +27,6 @@ typedef struct
 } lk_comp_case;
 
 /**
- * A compliance suite run. The suite owns the cases array (cases), which
- * must be released with lk_comp_suite_free(). The strings referenced by
- * cases[i].id/clauses[j]/notes and the implementation/version pointers are
- * non-owning and must outlive the suite.
- */
-/**
  * Opaque container for a compliance run. The suite owns the `cases` array and
  * must be released with lk_comp_suite_free(). Caller-provided strings such as
  * `implementation`, `version`, and any case `id`/`clauses[]`/`notes` pointers

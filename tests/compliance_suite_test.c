@@ -15,7 +15,10 @@ int main(void)
     rc = lk_comp_run_all(&s, 0, 1, 0);
     assert(rc == 0);
     assert(s.summary.core == LK_COMP_PARTIAL);
-    assert(s.summary.policy == LK_COMP_PARTIAL || s.summary.policy == LK_COMP_NA);
+    /* Policy-only run should set policy to PARTIAL on success. */
+    assert(s.summary.policy == LK_COMP_PARTIAL);
+    /* wasm group was not executed; should remain pristine (PASS). */
+    assert(s.summary.wasm == LK_COMP_PASS);
 
     lk_comp_suite_free(&s);
     return 0;

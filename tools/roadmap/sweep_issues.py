@@ -189,10 +189,25 @@ def post_dependencies_comment(number: int, hard_prereqs: List[int], parents: Lis
     body = "\n".join(lines)
     # Idempotent upsert: edit existing auto-generated comment if present, else create new
     owner, repo = repo_owner_name()
-    try:
-      comments = json.loads(run(["gh","api", f"repos/{owner}/{repo}/issues/{number}/comments"]))
-    except RuntimeError:
-      comments = []
+    # Fetch all comments with pagination to find/patch the existing header if present
+    comments: list[dict] = []
+    page = 1
+    while True:
+        try:
+            chunk = json.loads(run([
+                "gh","api", f"repos/{owner}/{repo}/issues/{number}/comments",
+                "-f", "per_page=100",
+                "-f", f"page={page}",
+            ]))
+        except RuntimeError:
+            comments = []
+            break
+        if not isinstance(chunk, list) or not chunk:
+            break
+        comments.extend(chunk)
+        if len(chunk) < 100:
+            break
+        page += 1
     header = "### Dependencies (auto-generated from ROADMAP-DAG.mmd)"
     existing = None
     for c in comments:
