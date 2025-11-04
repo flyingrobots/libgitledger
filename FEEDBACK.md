@@ -16,11 +16,11 @@ NOTES:
 
 ### Status
 
-- [ ] Resolved
+- [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Header updated: include/ledger/compliance.h now states policy only updates `s->summary.policy` and does not allocate/free/mutate `s->cases`. Verified via containerized format/tests.
 
 ## ⚠️ C Header Over-Promises `lk_comp_run_wasm` Semantics
 
@@ -40,11 +40,11 @@ NOTES:
 
 ### Status
 
-- [ ] Resolved
+- [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Header updated: include/ledger/compliance.h now states wasm only updates `s->summary.wasm` and leaves `s->cases` untouched. Dispatcher green.
 
 ## 🚨 CI/Docs Missing Explicit Submodule Requirement (Documentation)
 
@@ -64,10 +64,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+README.md and CONTRIBUTING.md already include explicit `git clone --recursive` and `git submodule update --init --recursive` plus a `make bootstrap` target.
 
 ## 🚨 CI/CD Pipelines Skip Submodule Initialization (CI/Makefile)
 
@@ -84,11 +84,11 @@ NOTES:
 
 ### Status
 
-- [ ] Resolved
+- [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Workflows set submodules intent explicitly (compliance: true; ci/docs-site: false) and Makefile includes `bootstrap`.
 
 ## 🚨 CI/CD Weak Link: Non-Explicit Submodule Config in `ci.yml`
 
@@ -111,10 +111,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+ci.yml has `with: submodules: false` for all jobs (with rationale comments). compliance.yml uses `submodules: true`.
 
 ## 🔧 C Header: `lk_comp_run_core` Missing Precise NULL Contract
 
@@ -136,11 +136,11 @@ NOTES:
 
 ### Status
 
-- [ ] Resolved
+- [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Header now documents precondition `s != NULL` for lk_comp_run_core and clarifies 0/-1 behavior; failure leaves a consistent state.
 
 ## 🐛 C Build: Unresolved Portability Blocker (`gmtime_r`)
 
@@ -161,10 +161,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Implementation uses `gmtime_s` on Windows and `gmtime` elsewhere; no `gmtime_r` remains. meson builds pass on Linux; MSVC path unaffected.
 
 ## 📝 C Docs: Missing Comment for ISO Buffer Size
 
@@ -182,10 +182,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Comment added: `char iso[64]; // ISO 8601 needs ~20 chars; 64 provides headroom` in src/compliance/report.c.
 
 ## 🛠️ Python Tooling: `validate_dag.py` Needs Precise Error Handling
 
@@ -203,10 +203,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+validate_dag.py now distinguishes 404/"could not resolve" from transient gh errors and logs exception class in warnings.
 
 ## 🧹 C Reporting: Macro-Based Error Handling Violates Practices
 
@@ -224,10 +224,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+Macros refactored to `write_or_fail` and `write_str_or_fail` and call sites updated; control flow is explicit.
 
 ## ⚠️ C Runtime: `checks_core.c` Rerun Failure Leaves Stale Summary
 
@@ -249,10 +249,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+checks_core resets `s->summary.core = LK_COMP_NA` before allocation; success sets PARTIAL; failure leaves NA. Test coverage added.
 
 ## 🧪 C Test: `compliance_suite_test.c` Fails to Verify Pristine State
 
@@ -272,10 +272,10 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+tests/compliance_suite_test.c asserts wasm remains LK_COMP_PASS after partial runs and policy becomes PARTIAL.
 
 ## 📝 Docs: Remove Duplicate Outdated Mermaid Diagram
 
@@ -292,7 +292,7 @@ NOTES:
 ### Status
 
 - [ ] Resolved
-- [ ] Was Already Fixed
+- [x] Was Already Fixed
 - [ ] Ignored
 
-{evidence and/or rationale}
+docs/ROADMAP-DAG.md duplicate (lines 127–237) was removed; only the enhanced diagram remains.
