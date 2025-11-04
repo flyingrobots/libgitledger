@@ -198,6 +198,10 @@ hooks-install:
 hooks-uninstall:
 	@git config --unset core.hooksPath || true
 	@echo "hooks: unset core.hooksPath"
+
+# Initialize submodules for fresh clones
+bootstrap:
+	@git submodule update --init --recursive
 # Roadmap helpers
 PYTHON ?= python3
 

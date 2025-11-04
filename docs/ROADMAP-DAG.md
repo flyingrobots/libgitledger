@@ -4,7 +4,7 @@ This diagram captures the dependency graph across ALL open issues, grouped by mi
 
 
 ```mermaid
-%%{init: { 'theme': 'base', 'flowchart': { 'useMaxWidth': false, 'nodeSpacing': 40, 'rankSpacing': 50, 'curve': 'basis' } }}%%
+%%{init: { 'theme': 'base', 'flowchart': { 'useMaxWidth': true, 'nodeSpacing': 40, 'rankSpacing': 50, 'curve': 'basis' } }}%%
 flowchart TD
   %% Node class definitions (milestones)
   classDef M0Node stroke:#8e44ad,stroke-width:2px,fill:#ffffff,color:#111;
@@ -120,21 +120,14 @@ flowchart TD
   N61 -.-> N72
   N61 -.-> N73
 
+  %% Edge conventions:
+  %%  - ==> denotes hard/blocking dependencies (left must complete before right starts)
+  %%  - -.-> denotes soft/informational relationships (non-blocking or epic grouping)
   %% Hard dependencies (task -> prerequisite)
   N53 ==> N51
   N56 ==> N55
-  style N28 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N29 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N35 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N36 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N38 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N39 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N47 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N50 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N54 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N58 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N59 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
-  style N61 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  %% Highlight root nodes via class instead of repeated inline style
+  class N28,N29,N35,N36,N38,N39,N47,N50,N54,N58,N59,N61 root;
 ```
 
 ```

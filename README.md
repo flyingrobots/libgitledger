@@ -27,6 +27,12 @@ Early scaffolding for a Git-native ledger library built on top of `libgit2`.
   git submodule update --init --recursive
   ```
   Skipping `--recursive` leaves `external/ledger-kernel/` empty and may break tools that read the spec.
+
+- Quick bootstrap after cloning:
+
+  ```bash
+  make bootstrap  # runs: git submodule update --init --recursive
+  ```
 - Quickstart for contributors:
   - Install repo hooks once: `make hooks-install` (pre-commit runs `make format-check` in containers like CI).
   - Temporarily bypass the format gate for a commit: `SKIP_FORMAT_CHECK=1 git commit -m "..."`.

@@ -5,13 +5,15 @@ int lk_comp_run_all(lk_comp_suite* s, int run_core, int run_policy, int run_wasm
 {
     if (!s)
         return -1;
-    // Reset overall summary to a known baseline; each enabled sub-runner
-    // (core/policy/wasm) sets its own field. This makes retries idempotent
-    // and avoids stale values when a subset of runners are executed.
-    s->summary.core   = LK_COMP_NA;
-    s->summary.policy = LK_COMP_NA;
-    s->summary.wasm   = LK_COMP_NA;
-    int rc            = 0;
+    // Reset only the requested groups; disabled groups preserve prior results
+    // so callers can run checks incrementally across multiple calls.
+    if (run_core)
+        s->summary.core = LK_COMP_NA;
+    if (run_policy)
+        s->summary.policy = LK_COMP_NA;
+    if (run_wasm)
+        s->summary.wasm = LK_COMP_NA;
+    int rc = 0;
     if (run_core)
         {
             rc = lk_comp_run_core(s);

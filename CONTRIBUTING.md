@@ -18,6 +18,8 @@ Thanks for helping build `libgitledger`! This document complements the roadmap a
 
   ```bash
   git submodule update --init --recursive
+  # or
+  make bootstrap
   ```
 
 - Install prerequisites (at minimum `libgit2` and `pkg-config`) before running host builds. Examples: `sudo apt-get install libgit2-dev pkg-config` or `brew install libgit2 pkg-config`.

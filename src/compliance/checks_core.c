@@ -6,11 +6,13 @@ int lk_comp_run_core(lk_comp_suite* s)
     if (!s)
         return -1;
     // Skeleton: populate minimal cases and mark N/A or PARTIAL where pending.
-    // If this runner is invoked repeatedly, free any previous cases first to
-    // avoid leaking the prior allocation and to keep the suite consistent.
+    // If re-invoked, explicitly free/reset the cases array to avoid leaks
+    // without coupling to lk_comp_suite_free() internals.
     if (s->cases)
         {
-            lk_comp_suite_free(s);
+            free(s->cases);
+            s->cases  = NULL;
+            s->ncases = 0;
         }
     static const char* c1_clauses[] = {"FS-10"};
     static const char* c2_clauses[] = {"FS-7", "FS-8"};
@@ -18,8 +20,10 @@ int lk_comp_run_core(lk_comp_suite* s)
     lk_comp_case*      arr          = (lk_comp_case*) calloc(3, sizeof(lk_comp_case));
     if (!arr)
         return -1;
-    s->cases        = arr;
-    s->ncases       = 3;
+    s->cases  = arr;
+    s->ncases = 3;
+    // Designated initializers: fields not listed are intentionally left
+    // zero/NULL. Update this block if new mandatory fields are added.
     s->cases[0]     = (lk_comp_case) {.id       = "C-1",
                                       .clauses  = c1_clauses,
                                       .nclauses = 1,

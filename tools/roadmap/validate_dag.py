@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 import json
 import os
 import re
 import subprocess
 import sys
-from typing import Sequence, Tuple, List, Dict
+from collections.abc import Sequence
 from pathlib import Path
 
 MMD = Path('docs/ROADMAP-DAG.mmd')
@@ -15,10 +14,10 @@ def run(cmd: Sequence[str]) -> str:
         raise RuntimeError(f"cmd failed: {' '.join(cmd)}\n{p.stderr}")
     return p.stdout
 
-def parse_mmd(text: str) -> Tuple[set, List[Tuple[str, str]], List[Tuple[str, str]]]:
+def parse_mmd(text: str) -> tuple[set, list[tuple[str, str]], list[tuple[str, str]]]:
     nodes = set()
-    edges_hard: List[Tuple[str, str]] = []
-    edges_soft: List[Tuple[str, str]] = []
+    edges_hard: list[tuple[str, str]] = []
+    edges_soft: list[tuple[str, str]] = []
     for ln in text.splitlines():
         m = re.match(r"\s*(N\d+)\[\"#(\d+) ", ln)
         if m:
@@ -45,27 +44,32 @@ def main():
     text = MMD.read_text(encoding='utf-8')
     nodes, edges_hard, _ = parse_mmd(text)
     # Map node id -> issue number
-    node_to_issue = {n: num for (n,num) in nodes}
+    node_to_issue = dict(nodes)
 
     # Basic syntax lint via mermaid-cli if available (optional)
     try:
         run(["docker", "run", "--rm", "-v", f"{MMD.parent.resolve()}:/data", "minlag/mermaid-cli", "-i", "/data/ROADMAP-DAG.mmd", "-o", "/data/.lint.svg"])
     except (RuntimeError, FileNotFoundError) as e:
-        print(f"validate_dag: warning: mermaid lint skipped: {e}")
+        print(f"validate_dag: warning: mermaid lint skipped ({type(e).__name__}): {e}")
 
     # Sanity: all issue numbers exist
-    missing: List[int] = []
+    missing: list[int] = []
     for num in node_to_issue.values():
         try:
             gh_json(["issue", "view", str(num), "--json", "number" ])
-        except RuntimeError:
-            missing.append(num)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if ("not found" in msg) or ("could not resolve" in msg) or (" 404" in msg):
+                missing.append(num)
+            else:
+                print(f"validate_dag: GitHub API error while checking issue {num}: {e}", file=sys.stderr)
+                return 2
     if missing:
         print(f"validate_dag: missing issues in DAG: {sorted(set(missing))}", file=sys.stderr)
         return 2
 
     # Validate edges reference existing nodes
-    invalid_edges: List[Tuple[str, str]] = []
+    invalid_edges: list[tuple[str, str]] = []
     for src, dst in edges_hard:
         if src not in node_to_issue or dst not in node_to_issue:
             invalid_edges.append((src, dst))
@@ -74,7 +78,7 @@ def main():
         return 3
 
     # Optional: detect cycles in hard-edge graph (DAG requirement)
-    adj: Dict[str, List[str]] = {}
+    adj: dict[str, list[str]] = {}
     nodes_set = {n for (n, _) in nodes}
     for n in nodes_set:
         adj.setdefault(n, [])
@@ -82,9 +86,9 @@ def main():
         adj.setdefault(s, []).append(d)
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: Dict[str, int] = {n: WHITE for n in nodes_set}
-    stack: List[str] = []
-    cycle_path: List[str] = []
+    color: dict[str, int] = dict.fromkeys(nodes_set, WHITE)
+    stack: list[str] = []
+    cycle_path: list[str] = []
 
     def dfs(u: str) -> bool:
         nonlocal cycle_path
@@ -98,7 +102,7 @@ def main():
                 # Found a back-edge; reconstruct simple cycle snippet
                 if v in stack:
                     i = stack.index(v)
-                    cycle_path = stack[i:] + [v]
+                    cycle_path = [*stack[i:], v]
                 else:
                     cycle_path = [v, u, v]
                 return True

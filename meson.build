@@ -153,3 +153,13 @@ tests_comp_smoke = executable(
   c_args: warn_flags,
 )
 test('compliance_smoke', tests_comp_smoke)
+
+# Compliance suite behavior test (summary preservation across runs)
+tests_comp_suite = executable(
+  'gitledger_compliance_suite_test',
+  'tests/compliance_suite_test.c',
+  include_directories: include_dir,
+  link_with: [libgitledger, compliance_lib],
+  c_args: warn_flags,
+)
+test('compliance_suite', tests_comp_suite)

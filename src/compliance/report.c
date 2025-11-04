@@ -77,6 +77,60 @@ static int json_escape(FILE* f, const char* s)
     return 0;
 }
 
+static int write_case(FILE* f, const lk_comp_case* c)
+{
+    if (!f || !c)
+        return -1;
+    if (c->nclauses && !c->clauses)
+        return -1;
+    if (fputs("    {\n", f) == EOF)
+        return -1;
+    if (fputs("      \"id\": \"", f) == EOF)
+        return -1;
+    if (json_escape(f, c->id ? c->id : "?") < 0)
+        return -1;
+    if (fputs("\",\n", f) == EOF)
+        return -1;
+    if (fputs("      \"clauses\": [", f) == EOF)
+        return -1;
+    for (size_t j = 0; j < c->nclauses; j++)
+        {
+            if (!c->clauses[j])
+                return -1;
+            if (j)
+                {
+                    if (fputs(", \"", f) == EOF)
+                        return -1;
+                }
+            else
+                {
+                    if (fputs("\"", f) == EOF)
+                        return -1;
+                }
+            if (json_escape(f, c->clauses[j]) < 0)
+                return -1;
+            if (fputs("\"", f) == EOF)
+                return -1;
+        }
+    if (fputs("],\n", f) == EOF)
+        return -1;
+    if (fputs("      \"status\": \"", f) == EOF)
+        return -1;
+    if (fputs(status_str(c->status), f) == EOF)
+        return -1;
+    if (fputs("\",\n", f) == EOF)
+        return -1;
+    if (fputs("      \"notes\": \"", f) == EOF)
+        return -1;
+    if (json_escape(f, c->notes ? c->notes : "") < 0)
+        return -1;
+    if (fputs("\"\n", f) == EOF)
+        return -1;
+    if (fputs("    }", f) == EOF)
+        return -1;
+    return 0;
+}
+
 int lk_comp_report_write(const lk_comp_suite* s, const char* out_path)
 {
     if (!s || !out_path)
@@ -85,7 +139,7 @@ int lk_comp_report_write(const lk_comp_suite* s, const char* out_path)
     if (!f)
         return -1;
     int       ok = 1;
-    char      iso[64];
+    char      iso[64]; // ISO 8601 "YYYY-MM-DDTHH:MM:SSZ" fits in < 32 bytes; 64 is ample headroom.
     time_t    t = time(NULL);
     struct tm g;
 #if defined(_WIN32)
@@ -114,20 +168,22 @@ int lk_comp_report_write(const lk_comp_suite* s, const char* out_path)
             return -1;
         }
 
-#define W(x)                                                                                       \
+// Helper-style macros to keep write sites readable. They set ok=0 and
+// jump to cleanup on error.
+#define write_or_fail(expr)                                                                        \
     do                                                                                             \
         {                                                                                          \
-            if ((x) < 0)                                                                           \
+            if ((expr) < 0)                                                                        \
                 {                                                                                  \
                     ok = 0;                                                                        \
                     goto done;                                                                     \
                 }                                                                                  \
         }                                                                                          \
     while (0)
-#define WP(slit)                                                                                   \
+#define write_str_or_fail(s)                                                                       \
     do                                                                                             \
         {                                                                                          \
-            if (fputs((slit), f) == EOF)                                                           \
+            if (fputs((s), f) == EOF)                                                              \
                 {                                                                                  \
                     ok = 0;                                                                        \
                     goto done;                                                                     \
@@ -135,17 +191,17 @@ int lk_comp_report_write(const lk_comp_suite* s, const char* out_path)
         }                                                                                          \
     while (0)
 
-    WP("{\n");
-    WP("  \"implementation\": \"");
-    W(json_escape(f, s->implementation ? s->implementation : "libgitledger"));
-    WP("\",\n");
-    WP("  \"version\": \"");
-    W(json_escape(f, s->version ? s->version : "0.0.0"));
-    WP("\",\n");
-    WP("  \"date\": \"");
-    WP(iso);
-    WP("\",\n");
-    WP("  \"results\": [\n");
+    write_str_or_fail("{\n");
+    write_str_or_fail("  \"implementation\": \"");
+    write_or_fail(json_escape(f, s->implementation ? s->implementation : "libgitledger"));
+    write_str_or_fail("\",\n");
+    write_str_or_fail("  \"version\": \"");
+    write_or_fail(json_escape(f, s->version ? s->version : "0.0.0"));
+    write_str_or_fail("\",\n");
+    write_str_or_fail("  \"date\": \"");
+    write_str_or_fail(iso);
+    write_str_or_fail("\",\n");
+    write_str_or_fail("  \"results\": [\n");
     const size_t MAX_CASES = 10000u;
     if (s->ncases > MAX_CASES)
         {
@@ -160,53 +216,26 @@ int lk_comp_report_write(const lk_comp_suite* s, const char* out_path)
     for (size_t i = 0; i < s->ncases; i++)
         {
             const lk_comp_case* c = &s->cases[i];
-            if (c->nclauses && !c->clauses)
+            if (write_case(f, c) < 0)
                 {
                     ok = 0;
                     goto done;
                 }
-            WP("    {\n");
-            WP("      \"id\": \"");
-            W(json_escape(f, c->id ? c->id : "?"));
-            WP("\",\n");
-            WP("      \"clauses\": [");
-            for (size_t j = 0; j < c->nclauses; j++)
-                {
-                    if (!c->clauses[j])
-                        {
-                            ok = 0;
-                            goto done;
-                        }
-                    if (j)
-                        WP(", \"");
-                    else
-                        WP("\"");
-                    W(json_escape(f, c->clauses[j]));
-                    WP("\"");
-                }
-            WP("],\n");
-            WP("      \"status\": \"");
-            WP(status_str(c->status));
-            WP("\",\n");
-            WP("      \"notes\": \"");
-            W(json_escape(f, c->notes ? c->notes : ""));
-            WP("\"\n");
-            WP("    }");
-            WP(i + 1 < s->ncases ? ",\n" : "\n");
+            write_str_or_fail(i + 1 < s->ncases ? ",\n" : "\n");
         }
-    WP("  ],\n");
-    WP("  \"summary\": {\n");
-    WP("    \"core\": \"");
-    WP(status_str(s->summary.core));
-    WP("\",\n");
-    WP("    \"policy\": \"");
-    WP(status_str(s->summary.policy));
-    WP("\",\n");
-    WP("    \"wasm\": \"");
-    WP(status_str(s->summary.wasm));
-    WP("\"\n");
-    WP("  }\n");
-    WP("}\n");
+    write_str_or_fail("  ],\n");
+    write_str_or_fail("  \"summary\": {\n");
+    write_str_or_fail("    \"core\": \"");
+    write_str_or_fail(status_str(s->summary.core));
+    write_str_or_fail("\",\n");
+    write_str_or_fail("    \"policy\": \"");
+    write_str_or_fail(status_str(s->summary.policy));
+    write_str_or_fail("\",\n");
+    write_str_or_fail("    \"wasm\": \"");
+    write_str_or_fail(status_str(s->summary.wasm));
+    write_str_or_fail("\"\n");
+    write_str_or_fail("  }\n");
+    write_str_or_fail("}\n");
 done:
     if (fflush(f) == EOF || ferror(f))
         ok = 0;
