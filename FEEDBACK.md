@@ -1,116 +1,126 @@
+## Fix Docs - Remove Duplicate Outdated Mermaid Diagram
+
+- [ ] Resolved
+- [x] Was Already Fixed
+- [ ] Ignored
+
+
+> 127-237: Remove the duplicate, outdated Mermaid diagram. Lines 127-237 contain an older version of the DAG that lacks the milestone subgraphs, theme configuration, node class definitions, and root-node styling present in the new diagram (lines 6-126). This orphaned duplicate will confuse readers and cause maintenance drift. Delete lines 127-237 entirely, leaving only the enhanced diagram.
+
+NOTES:
+- Rationale: Duplicate block (lines 127–237) was removed in a prior pass; only the enhanced diagram remains at the top of docs/ROADMAP-DAG.md.
+
+---
+
+## Fix Header - Document Public Runner Contracts
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> 45-47: Document the public runner contracts. These APIs are still naked—no parameter requirements, no return-value semantics, nothing. For a public surface, that’s unacceptable. Add Doxygen-style docs explaining expected inputs (NULL handling, suite ownership), side effects, and exact success/error codes so callers know how to use them.
+
+NOTES:
+- Rationale: Added Doxygen-style docs to lk_comp_run_core/policy/wasm describing preconditions (non-NULL), semantics, and return codes in include/ledger/compliance.h.
+
+---
+
 ## Critical Docs Fix: Add Submodule Instructions to README/CONTRIBUTING
 
-- [x] Was Already Fixed
 - [ ] Resolved
+- [x] Was Already Fixed
 - [ ] Ignored
 
- > In README.md (Quick Start section) and CONTRIBUTING.md (Developer Setup section) — add explicit instructions that the repo contains git submodules and must be cloned with submodules; include the two commands shown in the review: "git clone --recursive https://github.com/[repo].git" and the alternative for existing clones "git submodule update --init --recursive", place them prominently in those sections (near existing clone/setup steps), and briefly note that failing to use --recursive will leave external/ledger-kernel empty and break builds.
- 
- Rationale: Already present. README.md and CONTRIBUTING.md now include a dedicated submodule section and a Makefile `bootstrap` target. Skipping `--recursive` is called out explicitly. Verified in tree.
+> UPDATE README.md and CONTRIBUTING.md with explicit git clone --recursive requirement. Documentation verification confirms the critical gap: README.md and CONTRIBUTING.md contain no mention of the git submodule requirement. Developers cloning without --recursive will silently obtain an empty external/ledger-kernel/ directory, causing downstream build or runtime failures.
 
 NOTES:
-- This is a critical fix to prevent developer setup failures due to empty submodules.
+- Rationale: README.md + CONTRIBUTING.md now include explicit recursive clone/update commands and a Makefile `bootstrap` target.
 
 ---
 
-## Critical CI Fix: Enforce Submodule Initialization in All Workflows and Makefile
+## Critical CI Fix: Enforce Submodule Initialization in All Workflows/Makefile
 
 - [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-> In external/ledger-kernel around lines 1 to 1: CI and repo docs never initialize Git submodules so external/ledger-kernel remains empty in fresh clones and CI jobs; update every git clone in .github/workflows/ci.yml, docs-site.yml, and compliance.yml to include --recursive (or add a post-clone step running git submodule update --init --recursive), add an explicit recursive clone or submodule init target in the Makefile (e.g., clone or bootstrap target that runs git clone --recursive or git submodule update --init --recursive), and add a prominent note in README.md describing the required submodule init/recursive clone command and any Makefile target to run in local developer setup.
-
- NOTES:
- - Implemented explicit submodule handling across workflows by intent: compliance.yml sets `submodules: true`; ci.yml and docs-site.yml set `submodules: false`; Makefile adds `bootstrap`. This ensures CI pipelines fetch submodules only where needed.
-
----
-
-## Fix CI: Explicitly Set Submodule Configuration in `ci.yml`
-
-- [x] Was Already Fixed
-- [ ] Resolved
-- [ ] Ignored
-
-> external/ledger-kernel (context at lines 1-1): CI and docs lack explicit submodule handling; update .github/workflows/ci.yml to explicitly set submodules: true if the CI build/tests require external/ledger-kernel (or set submodules: false with a comment explaining why the kernel is not needed), update README.md Getting Started to show cloning with submodules (git clone --recursive ... or git submodule update --init --recursive) and clarify what directories are populated, and add a short section in CONTRIBUTING.md (or equivalent onboarding doc) that states whether the submodule is required, when to initialize it, and the exact commands to do so.
-
- NOTES:
- - ci.yml checkouts for linux-matrix, windows-msvc, and freestanding-linux now set `submodules: false` with comments; compliance.yml already has `true`.
-
----
-
-## Major Fix: Reset `summary.core` Before `calloc` in `checks_core.c`
-
-- [x] Resolved
-- [ ] Was Already Fixed
-- [ ] Ignored
-
-> In src/compliance/checks_core.c around lines 6 to 43, reset s->summary.core to LK_COMP_NA before you free/reset s->cases and attempt the calloc so that if allocation fails the suite summary is not left as LK_COMP_PARTIAL; then after successfully allocating and filling the new cases set s->summary.core back to LK_COMP_PARTIAL. Ensure the failure path (when calloc returns NULL) leaves summary.core as LK_COMP_NA.
-
- NOTES:
- - Ensures OOM during rerun leaves `summary.core == LK_COMP_NA` rather than a stale PARTIAL.
-
----
-
-## Major Fix: Paginate GitHub Comments in `sweep_issues.py`
-
-- [x] Resolved
-- [ ] Was Already Fixed
-- [ ] Ignored
-
-> Stop gagging on page-one tunnel vision. You still hit only the first 30 REST comments, so the moment the auto-generated note slips past page one you forget it exists and splatter a brand-new comment. Run this weekly and every busy issue becomes a landfill of duplicates. Paginate the comment fetch before deciding whether to PATCH or POST.
-
-```python
-# Suggested change structure for tools/roadmap/sweep_issues.py:
-comments: list[dict] = []
-page = 1
-while True:
-  try:
-      chunk = json.loads(run([
-          "gh",
-          "api",
-          f"repos/{owner}/{repo}/issues/{number}/comments",
-          "-f", "per_page=100",
-          "-f", f"page={page}",
-      ]))
-  except RuntimeError:
-      comments = []
-      break
-  if not isinstance(chunk, list) or not chunk:
-      break
-  comments.extend(chunk)
-  if len(chunk) < 100:
-      break
-  page += 1
-````
-
----
-
-## Minor Fix: Remove Duplicate Doc-Comment Block for `lk_comp_suite`
-
-- [x] Resolved
-- [ ] Was Already Fixed
-- [ ] Ignored
-
-> In include/ledger/compliance.h around lines 29 to 40, there are two consecutive doc-comment blocks describing the same lk\_comp\_suite struct; remove the first (earlier) comment block so only the second, more comprehensive documentation remains, ensuring spacing and comment formatting remain consistent after deletion.
+> CRITICAL: CI/CD pipelines silently skip submodule initialization—guaranteed failures in production. Verification confirms zero submodule handling in any workflow: `.github/workflows/ci.yml`, `docs-site.yml`, `compliance.yml`, and `Makefile`. Add `--recursive` to all `git clone` operations or add explicit `git submodule update --init --recursive` after clone in each workflow/Makefile target.
 
 NOTES:
-- Trivial cleanup for documentation consistency in `include/ledger/compliance.h`.
+- Rationale: compliance.yml uses `submodules: true`; ci.yml and docs-site.yml set `submodules: false`; Makefile adds `bootstrap` target for local clones.
 
 ---
 
-## Minor Test Fix: Tighten Assertion in `compliance_suite_test.c`
+## Critical CI Fix: Explicitly Set Submodule Configuration in `ci.yml`
+
+- [ ] Resolved
+- [x] Was Already Fixed
+- [ ] Ignored
+
+> CRITICAL: CI/CD wiring and documentation incomplete—add explicit submodule handling and setup docs. Update `.github/workflows/ci.yml` to explicitly set `submodules: true` (if required by tests) or `submodules: false` (if not required) and add a comment explaining the decision.
+
+NOTES:
+- Rationale: All jobs in ci.yml now explicitly set `submodules: false` (with comments); compliance.yml remains `true` as required.
+
+---
+
+## Critical Header Fix: Add `extern "C"` Guard
 
 - [x] Resolved
 - [ ] Was Already Fixed
 - [ ] Ignored
 
-> In tests/compliance\_suite\_test.c around line 18, the assertion allowing LK\_COMP\_NA is overly permissive given checks\_policy.c sets s-\>summary.policy = LK\_COMP\_PARTIAL on success and the test already asserts rc == 0; change the assertion to require exactly LK\_COMP\_PARTIAL (remove LK\_COMP\_NA) so the test enforces the intended contract and will catch regressions.
+> Add the extern "C" guard yesterday. Public C headers without an extern "C" wrapper are amateur hour. Any C++ consumer will see mangled names and fail to link against the C objects immediately. Fix the linkage contract.
 
 ```c
-// Suggested change structure for tests/compliance_suite_test.c:
-assert(s.summary.policy == LK_COMP_PARTIAL);
+// Suggested change structure for include/ledger/compliance.h:
+#ifdef __cplusplus
+extern "C" {
+#endif
+// ... all declarations ...
+#ifdef __cplusplus
+}
+#endif
 ```
+
+---
+
+## Fix C - Reset `summary.core` Before Allocation Attempt
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> In src/compliance/checks\_core.c around lines 6 to 43, reset s-\>summary.core to LK\_COMP\_NA before you free/reset s-\>cases and attempt the calloc so that if allocation fails the suite summary is not left as LK\_COMP\_PARTIAL; then after successfully allocating and filling the new cases set s-\>summary.core back to LK\_COMP\_PARTIAL. Ensure the failure path (when calloc returns NULL) leaves summary.core as LK\_COMP\_NA.
+
+NOTES:
+- Prevents a "partial success" report if a subsequent memory allocation failure occurs.
+
+---
+
+## Fix C - Refactor Macro-Based Error Handling in `report.c`
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> In src/compliance/report.c around lines 117-136 the W(x) and WP(slit) macros embed goto-based error handling and use uppercase names that look like constants; change them to a clearer pattern: either replace macro uses with explicit inline error checks that set ok=0 and jump to cleanup or rename and rework the macros to lowercase, descriptive names (e.g., `write_or_fail` and `write_str_or_fail`) so their control-flow behavior is obvious.
+
+NOTES:
+- Trivial/opinionated fix to improve readability and adherence to modern C practices.
+
+---
+
+## Fix Header - Document `NULL` Contract Precisely
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> 52-57: Document the NULL contract precisely. `lk_comp_run_core(NULL)` currently returns -1, yet the doc blithely talks about allocation/internal errors. Spell out that the argument must be non-NULL and that the function returns -1 when callers violate that precondition.
+
+NOTES:
+- Update the Doxygen documentation for `lk_comp_run_core` to explicitly state the requirement for a non-`NULL` argument and clarify the `-1` return code meaning.
 
 ---
 
@@ -122,5 +132,25 @@ assert(s.summary.policy == LK_COMP_PARTIAL);
 
 > In tests/compliance\_suite\_test.c around lines 4 to 22, the test fails to assert that untouched groups remain at their zero-initialized PASS state; after running policy-only (the second lk\_comp\_run\_all call) add an assertion that s.summary.wasm == LK\_COMP\_PASS to ensure the wasm group was not modified (keep existing checks for core and policy), e.g., insert a check immediately after the policy assertions to validate wasm remains LK\_COMP\_PASS.
 
- NOTES:
- - Ensures the `wasm` field is not unintentionally reset by the second `lk_comp_run_all` call.
+NOTES:
+- Ensures the `wasm` summary is not unintentionally modified during partial runs.
+
+---
+
+## Minor Fix: Tighten Assertion in `compliance_suite_test.c`
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> In tests/compliance\_suite\_test.c around line 18, the assertion allowing LK\_COMP\_NA is overly permissive given checks\_policy.c sets s-\>summary.policy = LK\_COMP\_PARTIAL on success and the test already asserts rc == 0; change the assertion to require exactly LK\_COMP\_PARTIAL (remove LK\_COMP\_NA) so the test enforces the intended contract and will catch regressions.
+
+---
+
+## Minor Fix: Remove Duplicate Doc-Comment Block for `lk_comp_suite`
+
+- [x] Resolved
+- [ ] Was Already Fixed
+- [ ] Ignored
+
+> In include/ledger/compliance.h around lines 29 to 40, there are two consecutive doc-comment blocks describing the same `lk_comp_suite` struct; remove the first (earlier) comment block so only the second, more comprehensive documentation remains, ensuring spacing and comment formatting remain consistent after deletion.
