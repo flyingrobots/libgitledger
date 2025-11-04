@@ -73,6 +73,44 @@ def main():
         print(f"validate_dag: edges reference non-existent nodes: {invalid_edges}", file=sys.stderr)
         return 3
 
+    # Optional: detect cycles in hard-edge graph (DAG requirement)
+    adj: Dict[str, List[str]] = {}
+    nodes_set = {n for (n, _) in nodes}
+    for n in nodes_set:
+        adj.setdefault(n, [])
+    for s, d in edges_hard:
+        adj.setdefault(s, []).append(d)
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: Dict[str, int] = {n: WHITE for n in nodes_set}
+    stack: List[str] = []
+    cycle_path: List[str] = []
+
+    def dfs(u: str) -> bool:
+        nonlocal cycle_path
+        color[u] = GRAY
+        stack.append(u)
+        for v in adj.get(u, []):
+            if color.get(v, WHITE) == WHITE:
+                if dfs(v):
+                    return True
+            elif color.get(v) == GRAY:
+                # Found a back-edge; reconstruct simple cycle snippet
+                if v in stack:
+                    i = stack.index(v)
+                    cycle_path = stack[i:] + [v]
+                else:
+                    cycle_path = [v, u, v]
+                return True
+        stack.pop()
+        color[u] = BLACK
+        return False
+
+    for n in nodes_set:
+        if color[n] == WHITE and dfs(n):
+            print(f"validate_dag: cycle detected in hard edges: {cycle_path}", file=sys.stderr)
+            return 4
+
     # Success
     print("validate_dag: OK")
     return 0
