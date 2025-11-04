@@ -1,0 +1,29 @@
+name: Compliance (artifact)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build (meson)
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build meson
+          meson setup meson-debug --buildtype debugoptimized
+          meson compile -C meson-debug
+      - name: Emit placeholder compliance report
+        run: |
+          cat > compliance.json <<'JSON'
+          {"implementation":"libgitledger","version":"0.0.0","date":"1970-01-01T00:00:00Z","results":[],"summary":{"core":"PARTIAL","policy":"N/A","wasm":"N/A"}}
+          JSON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compliance.json
+          path: compliance.json

@@ -67,3 +67,6 @@ compile_commands.json
 
 # Project-specific
 .obsidian/
+website/.docusaurus/
+website/node_modules/
+FEEDBACK.md

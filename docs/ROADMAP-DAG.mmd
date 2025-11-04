@@ -1,10 +1,4 @@
-# Roadmap Task DAG (Full)
-
-This diagram captures the dependency graph across ALL open issues, grouped by milestone.
-
-
-```mermaid
-%%{init: { 'theme': 'base', 'flowchart': { 'useMaxWidth': true, 'nodeSpacing': 40, 'rankSpacing': 50, 'curve': 'basis' } }}%%
+%%{init: { 'theme': 'base', 'flowchart': { 'useMaxWidth': false, 'nodeSpacing': 40, 'rankSpacing': 50, 'curve': 'basis' } }}%%
 flowchart TD
   %% Node class definitions (milestones)
   classDef M0Node stroke:#8e44ad,stroke-width:2px,fill:#ffffff,color:#111;
@@ -120,14 +114,67 @@ flowchart TD
   N61 -.-> N72
   N61 -.-> N73
 
-  %% Edge conventions:
-  %%  - ==> denotes hard/blocking dependencies (left must complete before right starts)
-  %%  - -.-> denotes soft/informational relationships (non-blocking or epic grouping)
   %% Hard dependencies (task -> prerequisite)
   N53 ==> N51
   N56 ==> N55
-  %% Highlight root nodes via class instead of repeated inline style
-  class N28,N29,N35,N36,N38,N39,N47,N50,N54,N58,N59,N61 root;
-```
+  N57 ==> N55
+  N13 --> N12
+  N14 --> N10
+  N15 --> N13
+  N15 --> N14
+  N11 --> N10
+  N32 --> N30
+  N33 --> N30
+  N33 --> N31
+  N33 --> N32
+  N34 --> N33
+  N35 --> N33
+  N35 --> N34
+  N36 --> N37
+  N36 --> N33
+  N39 --> N33
+  N39 --> N34
+  N39 --> N60
+  N23 --> N22
+  N24 --> N23
+  N25 --> N17
+  N25 --> N16
+  N20 --> N17
+  N20 --> N25
+  N29 --> N26
+  N29 --> N27
 
-```
+  %% Assign milestone classes to nodes
+  class N4 M0Node;
+  class N6,N7,N8,N9 M1Node;
+  class N10,N11,N12,N13,N14,N15,N47 M2Node;
+  class N16,N17,N18,N19,N20,N50,N51,N52,N53,N54,N55,N56,N57,N58,N62,N63,N64 M3Node;
+  class N21,N22,N23,N24,N25,N59,N60,N65,N66,N67,N68,N69,N70 M4Node;
+  class N26,N27,N28,N29,N61,N71,N72,N73 M5Node;
+  class N30,N31,N32,N33,N34,N35 M6Node;
+  class N36,N37,N38,N39 M7Node;
+
+  %% Highlight root nodes
+  style N4 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N6 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N7 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N8 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N9 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N11 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N15 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N18 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N19 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N21 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N24 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N28 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N29 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N35 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N36 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N38 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N39 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N47 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N50 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N54 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N58 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N59 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;
+  style N61 fill:#eaffea,stroke:#2ecc40,stroke-width:3px;

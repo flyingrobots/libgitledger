@@ -1,0 +1,4 @@
+# Default code owner for the repo
+# CODEOWNERS only supports GitHub handles; email added as a note.
+* @flyingrobots  # james@flyingrobots.dev
+

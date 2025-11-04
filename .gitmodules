@@ -1,0 +1,3 @@
+[submodule "external/ledger-kernel"]
+	path = external/ledger-kernel
+	url = https://github.com/flyingrobots/ledger-kernel

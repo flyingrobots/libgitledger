@@ -1,7 +1,8 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
         host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
-	activity-validate log hooks-install hooks-uninstall trophy symbols-check
+	activity-validate log hooks-install hooks-uninstall trophy symbols-check \
+	roadmap-render roadmap-sweep roadmap-validate roadmap-refresh
 
 all: both
 
@@ -197,3 +198,38 @@ hooks-install:
 hooks-uninstall:
 	@git config --unset core.hooksPath || true
 	@echo "hooks: unset core.hooksPath"
+
+# Initialize submodules for fresh clones
+bootstrap:
+	@git submodule update --init --recursive
+# Roadmap helpers
+PYTHON ?= python3
+
+.PHONY: roadmap-render roadmap-sweep roadmap-validate roadmap-refresh
+
+roadmap-render:
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "docker is required for roadmap-render" >&2; exit 1; \
+	fi
+	@docker run --rm -v "$(PWD)/docs:/data" minlag/mermaid-cli -i /data/ROADMAP-DAG.mmd -o /data/ROADMAP-DAG.svg
+
+roadmap-sweep:
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "$(PYTHON) not found; cannot run roadmap-sweep" >&2; exit 1; \
+	fi
+	@if [ ! -f tools/roadmap/sweep_issues.py ]; then \
+		echo "tools/roadmap/sweep_issues.py not found" >&2; exit 1; \
+	fi
+	@$(PYTHON) tools/roadmap/sweep_issues.py
+
+roadmap-validate:
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "$(PYTHON) not found; cannot run roadmap-validate" >&2; exit 1; \
+	fi
+	@if [ ! -f tools/roadmap/validate_dag.py ]; then \
+		echo "tools/roadmap/validate_dag.py not found" >&2; exit 1; \
+	fi
+	@$(PYTHON) tools/roadmap/validate_dag.py
+
+roadmap-refresh:
+	@$(MAKE) roadmap-validate && $(MAKE) roadmap-render

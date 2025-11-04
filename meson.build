@@ -129,3 +129,37 @@ if get_option('exec_nostdlib') and cc.get_id() != 'msvc'
   )
   test('ffs_smoke', ffs)
 endif
+# Compliance harness (non-installed, optional helper lib)
+compliance_sources = [
+  'src/compliance/report.c',
+  'src/compliance/checks_core.c',
+  'src/compliance/checks_policy.c',
+  'src/compliance/checks_wasm.c',
+  'src/compliance/suite.c',
+]
+compliance_lib = static_library('gitledger_compliance',
+  compliance_sources,
+  include_directories: include_dir,
+  c_args: warn_flags,
+  install: false,
+)
+
+# Optional compliance smoke test links the helper lib to ensure it compiles.
+tests_comp_smoke = executable(
+  'gitledger_compliance_smoke',
+  'tests/compliance_smoke.c',
+  include_directories: include_dir,
+  link_with: [libgitledger, compliance_lib],
+  c_args: warn_flags,
+)
+test('compliance_smoke', tests_comp_smoke)
+
+# Compliance suite behavior test (summary preservation across runs)
+tests_comp_suite = executable(
+  'gitledger_compliance_suite_test',
+  'tests/compliance_suite_test.c',
+  include_directories: include_dir,
+  link_with: [libgitledger, compliance_lib],
+  c_args: warn_flags,
+)
+test('compliance_suite', tests_comp_suite)

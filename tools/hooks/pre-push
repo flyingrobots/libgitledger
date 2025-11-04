@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Host Execution Guard: do not run heavy builds here. Only light validations.
+
+if command -v python3 >/dev/null 2>&1; then
+  if [ -f docs/ROADMAP-DAG.mmd ]; then
+    echo "[pre-push] Validating Roadmap DAG syntax/parsing..."
+    python3 tools/roadmap/validate_dag.py || {
+      echo "[pre-push] Roadmap validation failed" >&2
+      exit 1
+    }
+  fi
+  echo "[pre-push] Validating activity log..."
+  if command -v make >/dev/null 2>&1; then
+    make -s activity-validate || {
+      echo "[pre-push] Activity log invalid" >&2
+      exit 1
+    }
+  else
+    echo "[pre-push] 'make' not found; skipping activity log validation" >&2
+  fi
+fi
+
+exit 0

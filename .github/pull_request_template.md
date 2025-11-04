@@ -1,25 +1,22 @@
-# Summary
+## Summary
 
-<!-- Briefly describe the change. Link the primary issue and milestone. -->
+Describe the change and why it’s needed. Include links to related issues.
 
-## Testing
+## Checklist
 
-- [ ] `cmake --build` (debug)
-- [ ] `cmake --build` (release)
-- [ ] `ctest`
-- [ ] `meson compile` (debug)
-- [ ] `meson compile` (release)
-- [ ] `meson test`
-- [ ] Additional checks (lint, docs, etc.):
+- [ ] Tests added/updated
+- [ ] Docs updated (README/docs/ISSUES/ROADMAP)
+- [ ] ACTIVITY.log.jsonl entry added (`make log`) and `make activity-validate` passes
+- [ ] Roadmap/DAG updated if dependencies changed (`make roadmap-validate`)
+- [ ] Containerized targets used (no host builds), per AGENTS.md
 
-## Deployment / Release Impact
+## Acceptance Criteria
 
-- [ ] No migration needed
-- [ ] Docs updated
-- [ ] Follow-up issues filed
+- [ ] Builds green in CI matrix
+- [ ] Lint/format passes (`make format-check`)
+- [ ] Analyzer (optional) passes (`make analyze`)
 
-## Reviewer Checklist
+## Screenshots/Artifacts (if applicable)
 
-- [ ] Includes issue link (e.g., `Closes #123`)
-- [ ] Tests cover new/changed behavior
-- [ ] Dual-build CI expectations satisfied
+## Notes
+
