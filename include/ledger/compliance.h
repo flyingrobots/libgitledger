@@ -22,13 +22,28 @@ extern "C"
         LK_COMP_NA      = 3
     } lk_comp_status;
 
+    /**
+     * A single compliance case/result row.
+     *
+     * Purpose:
+     *  - Describes one requirement (by identifier) and the evaluation status
+     *    for the current implementation under test.
+     *
+     * Ownership/Lifetime:
+     *  - All pointer members (`id`, `clauses`, each `clauses[i]`, `notes`) are
+     *    non-owning views supplied by the caller. They must remain valid for the
+     *    lifetime of any report generation that references them.
+     *  - The suite owns only the array of `lk_comp_case` structs when produced by
+     *    lk_comp_run_core(); callers must release that array via
+     *    lk_comp_suite_free().
+     */
     typedef struct
     {
-        const char*    id;      // e.g., "C-1"
-        const char**   clauses; // non-owning: must outlive lk_comp_case
+        const char*    id;      // e.g., "C-1" (non-owning)
+        const char**   clauses; // non-owning: points to caller memory
         size_t         nclauses;
         lk_comp_status status;
-        const char*    notes; // optional
+        const char*    notes; // optional (non-owning)
     } lk_comp_case;
 
     /**
@@ -55,7 +70,10 @@ extern "C"
      * Run the core checks.
      *
      * Precondition:
-     *  - `s` must be non-NULL. It may be zero-initialized.
+     *  - `s` must be non-NULL and in a defined state. Passing an uninitialized
+     *    struct with indeterminate pointers is undefined behavior. A
+     *    zero-initialized struct is valid. If `s->cases` is non-NULL, this
+     *    function may free and replace it.
      *
      * Semantics:
      *  - On success, `s->cases` holds an owning array; call lk_comp_suite_free()
@@ -110,15 +128,29 @@ extern "C"
     /**
      * Run selected groups in order and update the suite summary.
      *
-     * Each enabled group is reset to LK_COMP_NA before its sub-runner executes;
-     * disabled groups preserve any previously computed summary so callers can
-     * invoke groups incrementally across multiple calls.
+     * Precondition:
+     *  - `s` must be non-NULL.
      *
-     * Returns the first non-zero error from a sub-runner, or 0 on success.
+     * @param s          Suite to update.
+     * @param run_core   Non-zero to run core checks; zero to skip.
+     * @param run_policy Non-zero to run policy checks; zero to skip.
+     * @param run_wasm   Non-zero to run WASM checks; zero to skip.
+     *
+     * Semantics:
+     *  - Each enabled group is reset to LK_COMP_NA before its sub-runner executes.
+     *  - Disabled groups preserve any previously computed summary, allowing
+     *    incremental execution across multiple calls.
+     *  - Execution halts on the first sub-runner error.
+     *
+     * Returns:
+     *  - 0 on success; -1 on error (including NULL input or any sub-runner failure).
      */
     int lk_comp_run_all(lk_comp_suite* s, int run_core, int run_policy, int run_wasm);
 
-    /** Free resources owned by the suite (cases array). Safe on NULL. */
+    /**
+     * Free resources owned by the suite (cases array).
+     * Calling with NULL is a safe no-op (returns immediately).
+     */
     void lk_comp_suite_free(lk_comp_suite* s);
 
 #ifdef __cplusplus
