@@ -70,3 +70,5 @@ compile_commands.json
 website/.docusaurus/
 website/node_modules/
 FEEDBACK.md
+.claude/
+.slaps/
