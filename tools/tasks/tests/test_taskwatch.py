@@ -347,6 +347,16 @@ class TaskwatchTests(unittest.TestCase):
         watcher.startup_sweep(workers=[])
         self.assertEqual([wave_paths.blocked / "100.txt"], self.fs.list_files(wave_paths.blocked))
 
+    def test_startup_unlocks_root_with_no_blockers(self):
+        # Wave 1 root task: explicit blockedBy: [] should move to open on startup
+        wave_paths = make_paths(self.root, wave=1)
+        ensure_dirs(self.fs, wave_paths)
+        self.fs.write_text(wave_paths.raw / "issue-6.json", json.dumps({"relationships": {"blockedBy": []}}))
+        self.fs.write_text(wave_paths.blocked / "6.txt", "root task prompt")
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=wave_paths)
+        watcher.startup_sweep(workers=[])
+        self.assertEqual([wave_paths.open / "6.txt"], self.fs.list_files(wave_paths.open))
+
     def test_worker_claims_lexicographic_order(self):
         self.fs.write_text(self.paths.open / "100.txt", "x")
         self.fs.write_text(self.paths.open / "2.txt", "x")

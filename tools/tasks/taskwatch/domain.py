@@ -145,6 +145,21 @@ def get_blockers_from_raw(fs: FilePort, p: Paths, issue: int) -> Set[int]:
         return set()
 
 
+def has_explicit_no_blockers(fs: FilePort, p: Paths, issue: int) -> bool:
+    """Return True if raw JSON explicitly declares blockedBy: [] for this issue."""
+    raw = p.raw / f"issue-{issue}.json"
+    if not fs.exists(raw):
+        return False
+    try:
+        data = json.loads(raw.read_text(encoding="utf-8"))
+        rel = data.get("relationships")
+        if isinstance(rel, dict) and "blockedBy" in rel and not (rel.get("blockedBy") or []):
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def blockers_all_closed(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
     for b in blockers:
         marker_prefix = f"{b}"
@@ -199,6 +214,15 @@ class Worker:
             prompt = self.fs.read_text(dest)
             self.started_at = time.time()
             self._ensure_estimate_for(dest, prompt)
+            # Log prompt snippet for observability
+            try:
+                snippet = (POLICY_GUARDRAILS + prompt).replace("\n", " ")[:200]
+                if self.reporter:
+                    self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM prompt task #{self.current_issue}: {snippet}")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("llm_prompt", task=self.current_issue, snippet=snippet, worker=self.worker_id)
+            except Exception:
+                pass
             rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
             if rc != 0:
                 footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
@@ -245,6 +269,14 @@ class Worker:
                 prompt = self.fs.read_text(dest)
                 self.started_at = time.time()
                 self._ensure_estimate_for(dest, prompt)
+                try:
+                    snippet = (POLICY_GUARDRAILS + prompt).replace("\n", " ")[:200]
+                    if self.reporter:
+                        self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM prompt task #{self.current_issue}: {snippet}")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("llm_prompt", task=self.current_issue, snippet=snippet, worker=self.worker_id)
+                except Exception:
+                    pass
                 rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
                 if rc != 0:
                     footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
@@ -466,6 +498,19 @@ class Watcher:
             # Ensure marker exists then unlock
             self._write_closed_marker(num)
             self._unlock_downstream(num)
+        # Additionally, unlock any roots that explicitly declare blockedBy: []
+        for blk in self.fs.list_files(self.p.blocked):
+            iss = extract_issue_number(blk)
+            if iss is None:
+                continue
+            if has_explicit_no_blockers(self.fs, self.p, iss):
+                dest = self.p.open / blk.name
+                if not self.fs.exists(dest):
+                    self.fs.move_atomic(blk, dest)
+                    if self.reporter:
+                        self.reporter.report(f"[SYSTEM] Moved task #{iss} to open (root: no blockers)")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("move", task=iss, from_dir="blocked", to_dir="open", worker=None)
         if issues:
             self.print_report(workers)
 
