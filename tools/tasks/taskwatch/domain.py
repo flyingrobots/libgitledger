@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Set
 
 from .ports import FilePort, LLMPort, Paths, ReporterPort, SleepPort
+from .logjson import JsonlLogger
 
 
 POLICY_GUARDRAILS = (
@@ -153,12 +154,13 @@ def blockers_all_closed(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
 
 
 class Worker:
-    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths, reporter: ReporterPort | None = None, allowed_issues: Optional[Set[int]] = None):
+    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths, reporter: ReporterPort | None = None, allowed_issues: Optional[Set[int]] = None, logger: Optional[JsonlLogger] = None):
         self.worker_id = worker_id
         self.fs = fs
         self.llm = llm
         self.p = paths
         self.reporter = reporter
+        self.logger = logger
         self.allowed_issues = allowed_issues
         self.current_issue: Optional[int] = None
         self.started_at: Optional[float] = None
@@ -186,6 +188,8 @@ class Worker:
                 if self.reporter:
                     num = extract_issue_number(extra)
                     self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("move", task=extract_issue_number(extra), from_dir="claimed", to_dir="failed", worker=self.worker_id)
             claimed_files = [keep]
 
         # If a claimed file exists, process it before claiming new work.
@@ -207,12 +211,18 @@ class Worker:
                     num = extract_issue_number(dest)
                     self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
                     self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("worker_result", outcome="error", task=extract_issue_number(dest), worker=self.worker_id, rc=rc)
+                    self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="failed", worker=self.worker_id)
             else:
                 self.fs.move_atomic(dest, self.p.closed / dest.name)
                 if self.reporter:
                     num = extract_issue_number(dest)
                     self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
                     self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("worker_result", outcome="success", task=extract_issue_number(dest), worker=self.worker_id)
+                    self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="closed", worker=self.worker_id)
             self.current_issue = None
             self.started_at = None
             self.estimate_sec = None
@@ -230,6 +240,8 @@ class Worker:
                 self.current_issue = extract_issue_number(dest)
                 if self.reporter:
                     self.reporter.report(f"[SYSTEM] Moved task #{self.current_issue} to claimed")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("move", task=self.current_issue, from_dir="open", to_dir="claimed", worker=self.worker_id)
                 prompt = self.fs.read_text(dest)
                 self.started_at = time.time()
                 self._ensure_estimate_for(dest, prompt)
@@ -245,12 +257,18 @@ class Worker:
                         num = extract_issue_number(dest)
                         self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
                         self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("worker_result", outcome="error", task=extract_issue_number(dest), worker=self.worker_id, rc=rc)
+                        self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="failed", worker=self.worker_id)
                 else:
                     self.fs.move_atomic(dest, self.p.closed / dest.name)
                     if self.reporter:
                         num = extract_issue_number(dest)
                         self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
                         self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("worker_result", outcome="success", task=extract_issue_number(dest), worker=self.worker_id)
+                        self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="closed", worker=self.worker_id)
                 self.current_issue = None
                 self.started_at = None
                 self.estimate_sec = None
@@ -318,12 +336,13 @@ class Worker:
 
 
 class Watcher:
-    def __init__(self, fs: FilePort, llm: LLMPort, reporter: ReporterPort, paths: Paths, allowed_issues: Optional[Set[int]] = None):
+    def __init__(self, fs: FilePort, llm: LLMPort, reporter: ReporterPort, paths: Paths, allowed_issues: Optional[Set[int]] = None, logger: Optional[JsonlLogger] = None):
         self.fs = fs
         self.llm = llm
         self.reporter = reporter
         self.p = paths
         self.allowed_issues = allowed_issues
+        self.logger = logger
         ensure_dirs(self.fs, self.p)
         self.closed_seen = {x.name for x in self.fs.list_files(self.p.closed)}
         self.failed_seen = {x.name for x in self.fs.list_files(self.p.failed)}
@@ -420,6 +439,8 @@ class Watcher:
                         self.fs.move_atomic(blocked_prompt, dest)
                         if self.reporter:
                             self.reporter.report(f"[SYSTEM] Moved task #{dep} to open")
+                        if getattr(self, 'logger', None):
+                            self.logger.emit("move", task=dep, from_dir="blocked", to_dir="open", worker=None)
 
     def handle_closed(self, file: Path, workers: List[Worker]) -> None:
         issue = extract_issue_number(file)
@@ -516,6 +537,8 @@ class Watcher:
         try:
             trunc = remediation.replace("\n", " ")[:50]
             self.reporter.report(f"[SYSTEM] Retry #{issue} with prompt: {trunc}")
+            if getattr(self, 'logger', None):
+                self.logger.emit("retry", task=issue, trunc_prompt=trunc)
         except Exception:
             pass
         self.llm.exec(remediation)

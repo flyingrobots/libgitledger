@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .taskwatch.adapters import CodexLLM, LocalFS, RealSleeper, StdoutReporter
 from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs, make_paths
+from .taskwatch.logjson import JsonlLogger
 import re
 
 
@@ -113,6 +114,8 @@ def run() -> int:
 
     # Use wave-specific queue directories if wave provided
     paths = make_paths(base_root=base, wave=wave)
+    # JSONL logger
+    jsonl = JsonlLogger(path=base.parent / 'logs' / 'events.jsonl')
 
     # Parse optional wave selection from argv/env
     wave = None
@@ -148,7 +151,7 @@ def run() -> int:
     except Exception as e:
         reporter.report(f"WARNING: device check failed: {e}")
 
-    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths)
+    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths, logger=jsonl)
 
     stop_event = threading.Event()
     workers: list[Worker] = []
@@ -164,7 +167,7 @@ def run() -> int:
     # Start workers
     n = os.cpu_count() or 1
     for i in range(1, n + 1):
-        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter)
+        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter, logger=jsonl)
         workers.append(w)
         t = threading.Thread(target=worker_thread, name=f"worker-{i}", args=(w,), daemon=True)
         t.start()

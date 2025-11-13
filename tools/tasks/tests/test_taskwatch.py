@@ -10,6 +10,7 @@ from tools.tasks.taskwatch.domain import (
     Worker,
     default_paths,
     ensure_dirs,
+    make_paths,
 )
 from tools.tasks.taskwatch.adapters import LocalFS
 from tools.tasks.taskwatch.ports import FilePort, LLMPort, ReporterPort
@@ -318,6 +319,33 @@ class TaskwatchTests(unittest.TestCase):
         self.fs.write_text(c, "done 101")
         w.handle_closed(c, workers=[])
         self.assertEqual([self.paths.open / "102.txt"], self.fs.list_files(self.paths.open))
+
+    def test_cross_wave_blocker_from_prior_wave_unlocks(self):
+        # Use wave 2 queue dirs
+        wave_paths = make_paths(self.root, wave=2)
+        ensure_dirs(self.fs, wave_paths)
+        # edges: 99 -> 100 ; 100 is in wave 2; 99 is prior wave and already closed (marker exists)
+        self.fs.write_text(wave_paths.edges_csv, "99,100\n")
+        self.fs.write_text(wave_paths.raw / "issue-100.json", json.dumps({"relationships": {"blockedBy": [99]}}))
+        self.fs.write_text(wave_paths.blocked / "100.txt", "prompt 100")
+        # Create admin-wide closed marker for 99 (from previous wave)
+        self.fs.write_text(wave_paths.admin_closed / "99.closed", "1")
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=wave_paths)
+        # Cold-start sweep should consider admin markers and unlock 100 in this wave
+        watcher.startup_sweep(workers=[])
+        self.assertEqual([wave_paths.open / "100.txt"], self.fs.list_files(wave_paths.open))
+
+    def test_cross_wave_blocker_not_closed_keeps_blocked(self):
+        # Use wave 2 queue dirs
+        wave_paths = make_paths(self.root, wave=2)
+        ensure_dirs(self.fs, wave_paths)
+        # edges: 101 -> 100 ; no marker for 101 so it should remain blocked
+        self.fs.write_text(wave_paths.edges_csv, "101,100\n")
+        self.fs.write_text(wave_paths.raw / "issue-100.json", json.dumps({"relationships": {"blockedBy": [101]}}))
+        self.fs.write_text(wave_paths.blocked / "100.txt", "prompt 100")
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=wave_paths)
+        watcher.startup_sweep(workers=[])
+        self.assertEqual([wave_paths.blocked / "100.txt"], self.fs.list_files(wave_paths.blocked))
 
     def test_worker_claims_lexicographic_order(self):
         self.fs.write_text(self.paths.open / "100.txt", "x")
