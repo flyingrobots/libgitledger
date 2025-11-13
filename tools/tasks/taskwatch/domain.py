@@ -159,12 +159,74 @@ def has_explicit_no_blockers(fs: FilePort, p: Paths, issue: int) -> bool:
     except Exception:
         return False
 
+def has_missing_blockers(fs: FilePort, p: Paths, issue: int) -> bool:
+    """Return True if raw JSON has no relationships.blockedBy key for this issue."""
+    raw = p.raw / f"issue-{issue}.json"
+    if not fs.exists(raw):
+        return True  # If no raw exists, assume no blockers info -> treat as none
+    try:
+        data = json.loads(raw.read_text(encoding="utf-8"))
+        rel = data.get("relationships")
+        return not (isinstance(rel, dict) and ("blockedBy" in rel or "blockedby" in rel))
+    except Exception:
+        return True
+
 
 def blockers_all_closed(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
     for b in blockers:
         marker_prefix = f"{b}"
         if not any(x.name.startswith(marker_prefix) for x in fs.list_files(p.admin_closed)):
             return False
+    return True
+
+def _wave_of_issue_from_raw(fs: FilePort, p: Paths, issue: int) -> Optional[int]:
+    """Return the wave (milestone::M#) for an issue as declared in raw JSON.
+
+    The repository owner requested raw issues to be the single source of truth
+    for wave membership. We therefore ignore docs/ROADMAP-DAG here.
+    """
+    rawf = p.raw / f"issue-{issue}.json"
+    if not fs.exists(rawf):
+        return None
+    try:
+        data = json.loads(rawf.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    labels = data.get("labels") or []
+    try:
+        for lab in labels:
+            name = lab.get("name") if isinstance(lab, dict) else None
+            if isinstance(name, str):
+                m = re.search(r"milestone::M(\d+)", name)
+                if m:
+                    return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+def _current_wave_from_paths(p: Paths) -> Optional[int]:
+    try:
+        name = p.base.name
+        return int(name) if name.isdigit() else None
+    except Exception:
+        return None
+
+def blockers_satisfied(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
+    if not blockers:
+        return True
+    # Determine current wave from queue base; treat blockers in prior waves as satisfied.
+    current_wave = _current_wave_from_paths(p)
+    for b in blockers:
+        bprefix = f"{b}"
+        # Closed marker satisfies immediately
+        if any(x.name.startswith(bprefix) for x in fs.list_files(p.admin_closed)):
+            continue
+        # Previous wave blockers are considered satisfied using RAW issue mapping
+        if current_wave is not None:
+            bwave = _wave_of_issue_from_raw(fs, p, b)
+            if bwave is not None and bwave < current_wave:
+                continue
+        return False
     return True
 
 
@@ -214,6 +276,13 @@ class Worker:
             prompt = self.fs.read_text(dest)
             self.started_at = time.time()
             self._ensure_estimate_for(dest, prompt)
+            # Prepare LLM stream log files
+            logs_dir = self.p.base.parent / 'logs' / 'workers' / f"{self.worker_id:03d}"
+            self.fs.mkdirs(logs_dir)
+            current_out = logs_dir / 'current-llm.stdout.txt'
+            current_err = logs_dir / 'current-llm.stderr.txt'
+            task_out = logs_dir / f"{self.current_issue}-llm.stdout.txt"
+            task_err = logs_dir / f"{self.current_issue}-llm.stderr.txt"
             # Log prompt snippet for observability
             try:
                 snippet = (POLICY_GUARDRAILS + prompt).replace("\n", " ")[:200]
@@ -223,27 +292,39 @@ class Worker:
                     self.logger.emit("llm_prompt", task=self.current_issue, snippet=snippet, worker=self.worker_id)
             except Exception:
                 pass
-            rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
+            # Truncate current files and stream there; copy to per-task files after
+            try:
+                with open(current_out, 'w', encoding='utf-8') as _c: pass
+                with open(current_err, 'w', encoding='utf-8') as _c: pass
+            except Exception:
+                pass
+            rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None, out_path=current_out, err_path=current_err)
+            # Save full outputs to per-task files
+            try:
+                self.fs.write_text(task_out, out)
+                self.fs.write_text(task_err, err)
+            except Exception:
+                pass
             if rc != 0:
                 footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
                 try:
                     self.fs.append_text(dest, footer)
                 except Exception:
                     pass
-                self.fs.move_atomic(dest, self.p.failed / dest.name)
+                moved = self.fs.move_atomic(dest, self.p.failed / dest.name)
                 if self.reporter:
                     num = extract_issue_number(dest)
                     self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
-                    self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
+                    self.reporter.report(f"[SYSTEM] Moved task #{num} to failed" + ("" if moved else " (route failed; will retry)"))
                 if getattr(self, 'logger', None):
                     self.logger.emit("worker_result", outcome="error", task=extract_issue_number(dest), worker=self.worker_id, rc=rc)
                     self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="failed", worker=self.worker_id)
             else:
-                self.fs.move_atomic(dest, self.p.closed / dest.name)
+                moved = self.fs.move_atomic(dest, self.p.closed / dest.name)
                 if self.reporter:
                     num = extract_issue_number(dest)
                     self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
-                    self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
+                    self.reporter.report(f"[SYSTEM] Moved task #{num} to closed" + ("" if moved else " (route failed; will retry)"))
                 if getattr(self, 'logger', None):
                     self.logger.emit("worker_result", outcome="success", task=extract_issue_number(dest), worker=self.worker_id)
                     self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="closed", worker=self.worker_id)
@@ -254,7 +335,12 @@ class Worker:
             return True
 
         # Otherwise, try to claim exactly one task from open.
-        for f in list_sorted_txt(self.fs, self.p.open):
+        open_list = list_sorted_txt(self.fs, self.p.open)
+        if not open_list:
+            if self.reporter:
+                self.reporter.report(f"[WORKER:{self.worker_id:03d}] Open issues: 0; sleeping")
+            return False
+        for f in open_list:
             # Respect wave/allowed filter
             f_issue = extract_issue_number(f)
             if self.allowed_issues is not None and (f_issue is None or f_issue not in self.allowed_issues):
@@ -263,6 +349,7 @@ class Worker:
             if self.fs.move_atomic(f, dest):
                 self.current_issue = extract_issue_number(dest)
                 if self.reporter:
+                    self.reporter.report(f"[WORKER:{self.worker_id:03d}] Open issues: {len(open_list)}; mv to claimed")
                     self.reporter.report(f"[SYSTEM] Moved task #{self.current_issue} to claimed")
                 if getattr(self, 'logger', None):
                     self.logger.emit("move", task=self.current_issue, from_dir="open", to_dir="claimed", worker=self.worker_id)
@@ -277,27 +364,45 @@ class Worker:
                         self.logger.emit("llm_prompt", task=self.current_issue, snippet=snippet, worker=self.worker_id)
                 except Exception:
                     pass
-                rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
+                # Prepare LLM stream log files
+                logs_dir = self.p.base.parent / 'logs' / 'workers' / f"{self.worker_id:03d}"
+                self.fs.mkdirs(logs_dir)
+                current_out = logs_dir / 'current-llm.stdout.txt'
+                current_err = logs_dir / 'current-llm.stderr.txt'
+                task_out = logs_dir / f"{self.current_issue}-llm.stdout.txt"
+                task_err = logs_dir / f"{self.current_issue}-llm.stderr.txt"
+                # Stream to current files
+                try:
+                    with open(current_out, 'w', encoding='utf-8') as _c: pass
+                    with open(current_err, 'w', encoding='utf-8') as _c: pass
+                except Exception:
+                    pass
+                rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None, out_path=current_out, err_path=current_err)
+                try:
+                    self.fs.write_text(task_out, out)
+                    self.fs.write_text(task_err, err)
+                except Exception:
+                    pass
                 if rc != 0:
                     footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
                     try:
                         self.fs.append_text(dest, footer)
                     except Exception:
                         pass
-                    self.fs.move_atomic(dest, self.p.failed / dest.name)
+                    moved = self.fs.move_atomic(dest, self.p.failed / dest.name)
                     if self.reporter:
                         num = extract_issue_number(dest)
                         self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
-                        self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
+                        self.reporter.report(f"[SYSTEM] Moved task #{num} to failed" + ("" if moved else " (route failed; will retry)"))
                     if getattr(self, 'logger', None):
                         self.logger.emit("worker_result", outcome="error", task=extract_issue_number(dest), worker=self.worker_id, rc=rc)
                         self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="failed", worker=self.worker_id)
                 else:
-                    self.fs.move_atomic(dest, self.p.closed / dest.name)
+                    moved = self.fs.move_atomic(dest, self.p.closed / dest.name)
                     if self.reporter:
                         num = extract_issue_number(dest)
                         self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
-                        self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
+                        self.reporter.report(f"[SYSTEM] Moved task #{num} to closed" + ("" if moved else " (route failed; will retry)"))
                     if getattr(self, 'logger', None):
                         self.logger.emit("worker_result", outcome="success", task=extract_issue_number(dest), worker=self.worker_id)
                         self.logger.emit("move", task=extract_issue_number(dest), from_dir="claimed", to_dir="closed", worker=self.worker_id)
@@ -306,6 +411,13 @@ class Worker:
                 self.estimate_sec = None
                 self.timeout_sec = None
                 return True
+            else:
+                # Claim race
+                if self.reporter:
+                    self.reporter.report(f"[WORKER:{self.worker_id:03d}] Open issues: {len(open_list)}; claim race on {f.name}; retry next")
+                if getattr(self, 'logger', None):
+                    self.logger.emit("claim_race", task=f_issue, worker=self.worker_id)
+        # Could not claim any (likely races); signal no work
         return False
 
     def _ensure_estimate_for(self, task_path: Path, prompt: str) -> None:
@@ -460,7 +572,7 @@ class Watcher:
         downstream = sorted(self.edges.get(issue, set()))
         for dep in downstream:
             blockers = get_blockers_from_raw(self.fs, self.p, dep)
-            if blockers and blockers_all_closed(self.fs, self.p, blockers):
+            if blockers and blockers_satisfied(self.fs, self.p, blockers):
                 blocked_prompt = self.p.blocked / f"{dep}.txt"
                 if self.fs.exists(blocked_prompt):
                     dest = self.p.open / blocked_prompt.name
@@ -480,6 +592,21 @@ class Watcher:
             return
         self._write_closed_marker(issue)
         self._unlock_downstream(issue)
+        # Sweep all blocked items to catch cross-wave eligibility
+        for blk in list_sorted_txt(self.fs, self.p.blocked):
+            iss = extract_issue_number(blk)
+            if iss is None:
+                continue
+            bs = get_blockers_from_raw(self.fs, self.p, iss)
+            # Treat as open if satisfied or if no blockers listed (explicit [] or missing).
+            if (bs and blockers_satisfied(self.fs, self.p, bs)) or (not bs and (has_explicit_no_blockers(self.fs, self.p, iss) or has_missing_blockers(self.fs, self.p, iss))):
+                dest = self.p.open / blk.name
+                if not self.fs.exists(dest):
+                    self.fs.move_atomic(blk, dest)
+                    if self.reporter:
+                        self.reporter.report(f"[SYSTEM] Moved task #{iss} to open (cross-wave eligible)")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("move", task=iss, from_dir="blocked", to_dir="open", worker=None)
         self.print_report(workers)
 
     def startup_sweep(self, workers: List[Worker]) -> None:
@@ -498,6 +625,20 @@ class Watcher:
             # Ensure marker exists then unlock
             self._write_closed_marker(num)
             self._unlock_downstream(num)
+        # Sweep all blocked items to catch cross-wave eligibility at startup
+        for blk in list_sorted_txt(self.fs, self.p.blocked):
+            iss = extract_issue_number(blk)
+            if iss is None:
+                continue
+            bs = get_blockers_from_raw(self.fs, self.p, iss)
+            if (bs and blockers_satisfied(self.fs, self.p, bs)) or (not bs and (has_explicit_no_blockers(self.fs, self.p, iss) or has_missing_blockers(self.fs, self.p, iss))):
+                dest = self.p.open / blk.name
+                if not self.fs.exists(dest):
+                    self.fs.move_atomic(blk, dest)
+                    if self.reporter:
+                        self.reporter.report(f"[SYSTEM] Moved task #{iss} to open (eligible)")
+                    if getattr(self, 'logger', None):
+                        self.logger.emit("move", task=iss, from_dir="blocked", to_dir="open", worker=None)
         # Additionally, unlock any roots that explicitly declare blockedBy: []
         for blk in self.fs.list_files(self.p.blocked):
             iss = extract_issue_number(blk)

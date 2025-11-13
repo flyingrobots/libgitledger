@@ -13,58 +13,42 @@ from pathlib import Path
 from .taskwatch.adapters import CodexLLM, LocalFS, RealSleeper, StdoutReporter
 from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs, make_paths
 from .taskwatch.logjson import JsonlLogger
-import re
+import re, json
 
 
 def _parse_wave_issues(wave: int) -> set[int]:
-    path = Path('docs/ROADMAP-DAG.md')
-    if not path.exists():
-        return set()
-    issues: set[int] = set()
-    current: int | None = None
-    node_re = re.compile(r"\bN(\d+)\[")
-    with path.open('r', encoding='utf-8') as f:
-        for line in f:
-            m = re.search(r"subgraph\\s+Phase(\\d+)", line)
-            if m:
-                current = int(m.group(1))
-                continue
-            if line.strip() == 'end':
-                current = None
-                continue
-            if current is not None and current == wave:
-                nm = node_re.search(line)
-                if nm:
-                    try:
-                        issues.add(int(nm.group(1)))
-                    except Exception:
-                        pass
-    return issues
+    """Return set of issue numbers that belong to the given wave using RAW issues.
+
+    The authoritative mapping comes from .slaps/tasks/raw/issue-*.json labels
+    with pattern milestone::M{wave}.
+    """
+    mapping = _parse_wave_map_from_raw()
+    return {i for i, w in mapping.items() if w == wave}
 
 
-def _parse_wave_map() -> dict[int, int]:
-    path = Path('docs/ROADMAP-DAG.md')
+def _parse_wave_map_from_raw() -> dict[int, int]:
+    raw = Path('.slaps/tasks/raw')
     mapping: dict[int, int] = {}
-    if not path.exists():
+    if not raw.exists():
         return mapping
-    current: int | None = None
-    node_re = re.compile(r"\bN(\d+)\[")
-    with path.open('r', encoding='utf-8') as f:
-        for line in f:
-            m = re.search(r"subgraph\\s+Phase(\\d+)", line)
-            if m:
-                current = int(m.group(1))
-                continue
-            if line.strip() == 'end':
-                current = None
-                continue
-            if current is not None:
-                nm = node_re.search(line)
-                if nm:
-                    try:
-                        mapping[int(nm.group(1))] = current
-                    except Exception:
-                        pass
+    for f in sorted(raw.glob('issue-*.json')):
+        try:
+            data = json.loads(f.read_text(encoding='utf-8'))
+        except Exception:
+            continue
+        num = data.get('number')
+        if not isinstance(num, int):
+            continue
+        wave = None
+        for lab in (data.get('labels') or []):
+            name = lab.get('name') if isinstance(lab, dict) else None
+            if isinstance(name, str):
+                m = re.search(r"milestone::M(\d+)", name)
+                if m:
+                    wave = int(m.group(1))
+                    break
+        if wave is not None:
+            mapping[num] = wave
     return mapping
 
 
@@ -108,7 +92,7 @@ def run() -> int:
 
     # Bucket prompts into wave dirs if wave specified
     if wave:
-        wave_map = _parse_wave_map()
+        wave_map = _parse_wave_map_from_raw()
         reporter.report(f"[SYSTEM] Wave filter active: Phase {wave}")
         _bucket_prompts_to_wave(fs, base, wave_map, wave)
 
@@ -133,8 +117,8 @@ def run() -> int:
         except Exception:
             wave = None
     allowed_issues = _parse_wave_issues(wave) if wave else None
-    if allowed_issues:
-        reporter.report(f"[SYSTEM] Wave filter active: Phase {wave} with {len(allowed_issues)} tasks")
+    if allowed_issues is not None:
+        reporter.report(f"[SYSTEM] Wave filter active: Phase {wave} with {len(allowed_issues)} tasks (source=RAW)")
 
     # Ensure directories exist before device checks
     ensure_dirs(fs, paths)

@@ -78,6 +78,16 @@ You can still invoke the underlying host targets directly (`make host-cmake`,
 `make host-test-meson`, etc.), but they now abort unless you exported the
 acknowledgement flag or are already inside the container environment.
 
+### API Documentation (Doxygen)
+
+An opt-in CMake target named `doxygen` generates API docs. Use the containerized helper:
+
+- `make docs` — builds the CMake Release configuration and runs the `doxygen` target
+
+The output is written to the build tree at `build-release/docs/api/html/index.html` (and `xml/`).
+If Doxygen is not installed inside your environment, the target becomes a no-op and prints a
+message; install Doxygen to get full output. Generated docs under `docs/api/` are ignored by Git.
+
 ### Manual build commands
 
 Prefer the make targets above, but if you need bespoke steps the raw commands

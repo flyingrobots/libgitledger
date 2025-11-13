@@ -33,7 +33,7 @@ class FilePort(Protocol):
 
 
 class LLMPort(Protocol):
-    def exec(self, prompt: str, timeout: float | None = None) -> Tuple[int, str, str]: ...  # rc, stdout, stderr
+    def exec(self, prompt: str, timeout: float | None = None, out_path: Path | None = None, err_path: Path | None = None) -> Tuple[int, str, str]: ...  # rc, stdout, stderr
 
 
 class SleepPort(Protocol):

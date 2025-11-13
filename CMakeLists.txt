@@ -136,6 +136,55 @@ if(BUILD_TESTING)
     add_test(NAME version COMMAND gitledger_version_test)
     add_test(NAME gitledger_cli_smoke COMMAND gitledger_tests)
     add_test(NAME error COMMAND gitledger_error_test)
+
+    # Failing-first acceptance test for Issue #51:
+    # Expect a CMake target named 'doxygen' to exist and be buildable.
+    # This will initially fail until the target is implemented.
+    add_test(
+        NAME docs_doxygen_target
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target doxygen
+    )
+endif()
+
+# -----------------------------------------------------------------------------
+# Documentation (Issue #51): Doxygen configuration and target
+# -----------------------------------------------------------------------------
+find_package(Doxygen QUIET)
+
+set(GL_DOXY_INPUT "${CMAKE_SOURCE_DIR}/docs/Doxyfile")
+
+if (DOXYGEN_FOUND)
+    message(STATUS "Doxygen found: enabling 'doxygen' target")
+    # Configure environment for Doxygen: allow CMake variable expansion in file
+    # by generating a build-local copy with paths substituted.
+    set(GL_DOXY_OUT_DIR "${CMAKE_BINARY_DIR}/docs/api")
+    set(GL_DOXY_CONFIG "${CMAKE_BINARY_DIR}/Doxyfile")
+    configure_file("${GL_DOXY_INPUT}" "${GL_DOXY_CONFIG}" @ONLY)
+
+    add_custom_target(
+        doxygen
+        COMMAND ${DOXYGEN_EXECUTABLE} "${GL_DOXY_CONFIG}"
+        BYPRODUCTS "${GL_DOXY_OUT_DIR}/html/index.html"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        COMMENT "Generating API documentation with Doxygen"
+        VERBATIM
+    )
+
+    if(BUILD_TESTING)
+        # Verify HTML output exists after building the target.
+        add_test(
+            NAME docs_doxygen_output
+            COMMAND ${CMAKE_COMMAND}
+                    -DGL_DOC_OUT=${CMAKE_BINARY_DIR}/docs/api/html/index.html
+                    -P ${CMAKE_SOURCE_DIR}/cmake/verify_doxygen.cmake
+        )
+    endif()
+else()
+    message(STATUS "Doxygen not found: defining stub 'doxygen' target (no-op)")
+    add_custom_target(
+        doxygen
+        COMMAND ${CMAKE_COMMAND} -E echo "Doxygen not found; skipping docs generation"
+    )
 endif()
 
 # Freestanding smoke executable (only when explicitly enabled and non-MSVC)

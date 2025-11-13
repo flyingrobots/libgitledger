@@ -22,10 +22,17 @@ class FakeLLM(LLMPort):
         self.capture = capture if capture is not None else []
         self.last_timeout: float | None = None
 
-    def exec(self, prompt: str, timeout: float | None = None):
+    def exec(self, prompt: str, timeout: float | None = None, out_path: Path | None = None, err_path: Path | None = None):
         # capture the prompt for assertions
         self.capture.append(prompt)
         self.last_timeout = timeout
+        # write to paths if provided
+        if out_path is not None:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text("fake-stdout\n", encoding='utf-8')
+        if err_path is not None:
+            err_path.parent.mkdir(parents=True, exist_ok=True)
+            err_path.write_text("fake-stderr\n", encoding='utf-8')
         if self.rc == 0:
             return 0, "ok", ""
         return self.rc, "oops", "bad"
@@ -60,7 +67,7 @@ class EstimatingLLM(LLMPort):
         self.capture: list[str] = []
         self.last_timeout: float | None = None
 
-    def exec(self, prompt: str, timeout: float | None = None):
+    def exec(self, prompt: str, timeout: float | None = None, out_path: Path | None = None, err_path: Path | None = None):
         self.capture.append(prompt)
         if "Estimate how long the following task" in prompt:
             return 0, str(self.minutes), ""
@@ -478,31 +485,25 @@ class TaskwatchTests(unittest.TestCase):
         self.assertEqual("newer prompt", (self.paths.open / "402.txt").read_text(encoding="utf-8"))
         self.assertTrue((self.paths.blocked / "402.txt").exists())
 
-    def test_malformed_edges_prevents_unlock_and_does_not_crash(self):
+    def test_malformed_edges_still_unlocks_by_blockedBy_logic(self):
         # Malformed edges: header unrelated and non-integer values
         self.fs.write_text(self.paths.edges_csv, "alpha,beta\nfoo,bar\n")
-        # Even if raw says blockedBy, without a usable edges relation nothing should unlock
+        # With blockedBy present and blocker closed, unlock should proceed even if edges.csv is malformed
         self.fs.write_text(self.paths.raw / "issue-41.json", json.dumps({"relationships": {"blockedBy": [40]}}))
         self.fs.write_text(self.paths.blocked / "41.txt", "prompt 41")
         w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
         c = self.paths.closed / "40.txt"
         self.fs.write_text(c, "done 40")
-        # Should not crash and should not move 41
         w.handle_closed(c, workers=[])
-        self.assertTrue((self.paths.blocked / "41.txt").exists())
-        self.assertEqual([], self.fs.list_files(self.paths.open))
+        self.assertEqual([self.paths.open / "41.txt"], self.fs.list_files(self.paths.open))
 
-    def test_missing_blockedby_in_raw_does_not_unlock(self):
-        # edges exist but raw has no blockedBy list
-        self.fs.write_text(self.paths.edges_csv, "50,51\n")
+    def test_missing_blockedby_in_raw_unlocks_on_startup(self):
+        # No blockedBy list should be treated as no blockers
         self.fs.write_text(self.paths.raw / "issue-51.json", json.dumps({}))
         self.fs.write_text(self.paths.blocked / "51.txt", "prompt 51")
         w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
-        c = self.paths.closed / "50.txt"
-        self.fs.write_text(c, "done 50")
-        w.handle_closed(c, workers=[])
-        self.assertTrue((self.paths.blocked / "51.txt").exists())
-        self.assertEqual([], self.fs.list_files(self.paths.open))
+        w.startup_sweep(workers=[])
+        self.assertEqual([self.paths.open / "51.txt"], self.fs.list_files(self.paths.open))
 
     def test_double_close_event_is_idempotent(self):
         self.fs.write_text(self.paths.edges_csv, "60,61\n")

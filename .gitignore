@@ -29,6 +29,9 @@ meson-release/
 meson-*/
 dist/
 
+# Documentation output (Doxygen)
+docs/api/
+
 # C build artifacts
 *.d
 *.o
