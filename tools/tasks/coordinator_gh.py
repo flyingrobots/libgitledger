@@ -46,3 +46,56 @@ class CoordinatorGH:
     def should_abort(self, counts: Dict[str, int]) -> bool:
         return counts.get("dead", 0) > 0
 
+    def compose_progress_md(self, project: GHProject, wave: int) -> str:
+        items = self.gh.list_items(project)
+        # Helpers
+        def fval(it, name):
+            for f in it.get('fields') or []:
+                nm = (f.get('name') or f.get('field', {}).get('name') or '').strip()
+                if nm == name:
+                    v = f.get('value')
+                    return v.get('name') if isinstance(v, dict) else v
+            return None
+        inscope = [it for it in items if fval(it, 'slaps-wave') == wave]
+        open_issues = []
+        blocked_issues = []
+        closed_issues = []
+        failure_issues = []
+        dead_issues = []
+        claimed_issues = []
+        for it in inscope:
+            num = (it.get('content') or {}).get('number')
+            st = fval(it, 'slaps-state')
+            if st == 'open': open_issues.append(num)
+            elif st == 'blocked': blocked_issues.append(num)
+            elif st == 'closed': closed_issues.append(num)
+            elif st == 'failure': failure_issues.append(num)
+            elif st == 'dead': dead_issues.append(num)
+            elif st == 'claimed': claimed_issues.append(num)
+        blocked_lines = []
+        for n in blocked_issues:
+            for b in self.gh.get_blockers(n) or []:
+                blocked_lines.append(f"- (#{n})-[blocked by]->(#{b})")
+        wave_status = 'pending'
+        if dead_issues:
+            wave_status = 'dead'
+        elif not open_issues and not blocked_issues and not failure_issues and not claimed_issues:
+            wave_status = 'complete'
+        def links(nums):
+            return ', '.join(f"#{x}" for x in sorted(nums)) if nums else '(none)'
+        md = (
+            "## SLAPS Progress Update\n\n"
+            "|  |  |\n|--|--|\n"
+            f"| **OPEN ISSUES:** | {len(open_issues)} |\n"
+            f"| **OPEN ISSUES:** | {links(open_issues)} |\n"
+            f"| **CLOSED ISSUES:** | {len(closed_issues)} |\n"
+            f"| **CLOSED ISSUES:** | {links(closed_issues)} |\n"
+            f"| **BLOCKED ISSUES:** | {len(blocked_issues)} |\n"
+            f"| **BLOCKED ISSUES:** | {'\n'.join(blocked_lines) if blocked_lines else '(none)'} |\n"
+            f"| **WAVE STATUS:** | {wave_status} |\n\n"
+        )
+        return md
+
+    def post_progress_comment(self, project: GHProject, wave_issue: int, wave: int) -> None:
+        md = self.compose_progress_md(project, wave)
+        self.gh.add_comment(wave_issue, md)

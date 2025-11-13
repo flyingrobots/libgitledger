@@ -86,7 +86,29 @@ class CoordinatorGHUnitTests(unittest.TestCase):
         self.assertEqual(1, counts.get("closed", 0))  # 42 closed
         self.assertFalse(coord.should_abort(counts))
 
+    def test_progress_comment_content(self):
+        from tools.tasks.coordinator_gh import CoordinatorGH
+        gh = FakeGH()
+        watcher = self._watcher(gh)
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        project = watcher.state.project
+        fields = watcher.state.fields
+        # Prepare states: 42 closed; 55 open; 56 blocked by 55
+        items = {it["content"]["number"]: it for it in gh.list_items(project)}
+        gh.set_item_single_select(project, items[42]["id"], fields["slaps-state"], "closed")
+        gh.set_item_single_select(project, items[55]["id"], fields["slaps-state"], "open")
+        gh.blockers[56] = [55]
+        gh.set_item_single_select(project, items[56]["id"], fields["slaps-state"], "blocked")
+        coord = CoordinatorGH(gh)
+        md = coord.compose_progress_md(project, wave=1)
+        self.assertIn("SLAPS Progress Update", md)
+        self.assertIn("OPEN ISSUES", md)
+        self.assertIn("#55", md)
+        # Post comment and verify stored
+        coord.post_progress_comment(project, wave_issue=1001, wave=1)
+        self.assertTrue(any(c[0] == 1001 and 'SLAPS Progress Update' in c[1] for c in gh.comments))
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -252,6 +252,39 @@ class TestGHFlow(unittest.TestCase):
             return None
         self.assertNotEqual("claimed", state(42))
 
+    def test_leader_handoff_on_stale_heartbeat(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        # watcher1 writes an old heartbeat
+        watcher1 = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                             raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher1.preflight(wave=1)
+        watcher1.initialize_items(wave=1)
+        hb = watcher1.leader_heartbeat
+        hb.parent.mkdir(parents=True, exist_ok=True)
+        hb.write_text('{"pid":1,"host":"x","ts": 0}', encoding='utf-8')
+        # create a lock
+        lf = self.lock / "42.lock.txt"
+        lf.parent.mkdir(parents=True, exist_ok=True)
+        lf.write_text('{"worker_id": 7, "started_at": 999999999999}', encoding='utf-8')
+        # watcher2 should take leadership and claim
+        watcher2 = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                             raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher2.preflight(wave=1)
+        watcher2.initialize_items(wave=1)
+        watcher2.watch_locks()
+        prj = watcher1.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        def state(num):
+            it = items.get(num)
+            if not it:
+                return None
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertEqual("claimed", state(42))
+
     def test_claim_posts_progress_comment_when_wave_issue_set(self):
         reporter = type("R", (), {"report": lambda self, s: None})()
         watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
