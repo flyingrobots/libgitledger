@@ -7,15 +7,15 @@ from typing import List, Protocol, Tuple
 
 @dataclass
 class Paths:
-    base: Path
+    base: Path              # wave base or global base for queue dirs
     open: Path
     blocked: Path
     claimed: Path
     closed: Path
     failed: Path
     dead: Path
-    raw: Path
-    admin: Path
+    raw: Path               # always global under .slaps/tasks/raw
+    admin: Path             # always global under .slaps/tasks/admin
     admin_closed: Path
     edges_csv: Path
     failure_reasons: Path

@@ -32,23 +32,29 @@ def extract_issue_number(path: Path) -> Optional[int]:
         return None
 
 
-def default_paths(base: Path) -> Paths:
-    base = base.resolve()
+def make_paths(base_root: Path, wave: Optional[int] = None) -> Paths:
+    base_root = base_root.resolve()
+    qbase = base_root / (str(wave) if wave is not None else '')
+    qbase = qbase if wave is not None else base_root
     return Paths(
-        base=base,
-        open=base / "open",
-        blocked=base / "blocked",
-        claimed=base / "claimed",
-        closed=base / "closed",
-        failed=base / "failed",
-        dead=base / "dead",
-        raw=base / "raw",
-        admin=base / "admin",
-        admin_closed=base / "admin" / "closed",
-        edges_csv=base / "admin" / "edges.csv",
-        failure_reasons=base.parent / "failures" / "reasons",
-        attempts=base / "admin" / "attempts",
+        base=qbase,
+        open=qbase / "open",
+        blocked=qbase / "blocked",
+        claimed=qbase / "claimed",
+        closed=qbase / "closed",
+        failed=qbase / "failed",
+        dead=qbase / "dead",
+        raw=base_root / "raw",
+        admin=base_root / "admin",
+        admin_closed=(base_root / "admin" / "closed"),
+        edges_csv=base_root / "admin" / "edges.csv",
+        failure_reasons=(base_root.parent / "failures" / "reasons"),
+        attempts=base_root / "admin" / "attempts",
     )
+
+
+def default_paths(base: Path) -> Paths:
+    return make_paths(base_root=base, wave=None)
 
 
 def ensure_dirs(fs: FilePort, p: Paths) -> None:

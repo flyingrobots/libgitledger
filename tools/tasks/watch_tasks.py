@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .taskwatch.adapters import CodexLLM, LocalFS, RealSleeper, StdoutReporter
-from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs
+from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs, make_paths
 import re
 
 
@@ -41,13 +41,78 @@ def _parse_wave_issues(wave: int) -> set[int]:
     return issues
 
 
+def _parse_wave_map() -> dict[int, int]:
+    path = Path('docs/ROADMAP-DAG.md')
+    mapping: dict[int, int] = {}
+    if not path.exists():
+        return mapping
+    current: int | None = None
+    node_re = re.compile(r"\bN(\d+)\[")
+    with path.open('r', encoding='utf-8') as f:
+        for line in f:
+            m = re.search(r"subgraph\\s+Phase(\\d+)", line)
+            if m:
+                current = int(m.group(1))
+                continue
+            if line.strip() == 'end':
+                current = None
+                continue
+            if current is not None:
+                nm = node_re.search(line)
+                if nm:
+                    try:
+                        mapping[int(nm.group(1))] = current
+                    except Exception:
+                        pass
+    return mapping
+
+
+def _bucket_prompts_to_wave(fs: LocalFS, base_root: Path, mapping: dict[int, int], wave: int) -> None:
+    # Move global blocked/open prompts into wave-specific dirs if their issue maps to this wave
+    global_blocked = base_root / 'blocked'
+    global_open = base_root / 'open'
+    dst_paths = make_paths(base_root, wave)
+    ensure_dirs(fs, dst_paths)
+    for src_dir, dst_dir in [(global_blocked, dst_paths.blocked), (global_open, dst_paths.open)]:
+        for p in fs.list_files(src_dir):
+            m = re.search(r"(\d+)", p.name)
+            if not m:
+                continue
+            issue = int(m.group(1))
+            if mapping.get(issue) == wave:
+                fs.move_atomic(p, dst_dir / p.name)
+
+
 def run() -> int:
     base = Path('.slaps/tasks')
     fs = LocalFS()
     llm = CodexLLM()
     reporter = StdoutReporter()
     sleeper = RealSleeper()
-    paths = default_paths(base)
+    # Determine wave selection
+    wave = None
+    args = sys.argv[1:]
+    for i in range(len(args)):
+        if args[i] == '--wave' and i + 1 < len(args):
+            try:
+                wave = int(args[i + 1])
+            except Exception:
+                wave = None
+            break
+    if wave is None:
+        try:
+            wave = int(os.environ.get('TASK_WAVE', ''))
+        except Exception:
+            wave = None
+
+    # Bucket prompts into wave dirs if wave specified
+    if wave:
+        wave_map = _parse_wave_map()
+        reporter.report(f"[SYSTEM] Wave filter active: Phase {wave}")
+        _bucket_prompts_to_wave(fs, base, wave_map, wave)
+
+    # Use wave-specific queue directories if wave provided
+    paths = make_paths(base_root=base, wave=wave)
 
     # Parse optional wave selection from argv/env
     wave = None
@@ -83,7 +148,7 @@ def run() -> int:
     except Exception as e:
         reporter.report(f"WARNING: device check failed: {e}")
 
-    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths, allowed_issues=allowed_issues)
+    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths)
 
     stop_event = threading.Event()
     workers: list[Worker] = []
@@ -99,7 +164,7 @@ def run() -> int:
     # Start workers
     n = os.cpu_count() or 1
     for i in range(1, n + 1):
-        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter, allowed_issues=allowed_issues)
+        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter)
         workers.append(w)
         t = threading.Thread(target=worker_thread, name=f"worker-{i}", args=(w,), daemon=True)
         t.start()
