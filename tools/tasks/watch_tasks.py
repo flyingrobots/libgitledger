@@ -275,7 +275,8 @@ class Worker:
         claimed_dir.mkdir(parents=True, exist_ok=True)
         while not self.stop_event.is_set():
             # Step 1: look for a file in open/, claim it via atomic rename
-            open_files = list_sorted_files(DIR_OPEN)
+            # Only consider .txt prompts.
+            open_files = [p for p in list_sorted_files(DIR_OPEN) if p.suffix == '.txt']
             claimed_file: Optional[Path] = None
             issue_num: Optional[int] = None
             for f in open_files:
@@ -292,8 +293,17 @@ class Worker:
             with self.lock:
                 self.current_issue = issue_num
             try:
+                # Prepend hard guardrails to the prompt so workers are warned.
+                guardrails = (
+                    "POLICY (READ CAREFULLY):\n"
+                    "- DO NOT PERFORM GIT OPERATIONS. Do not run git/gh, do not commit, branch, rebase, or push.\n"
+                    "- You are working in a shared branch alongside other LLMs. Expect transient conflicts; work around them, coordinate via code comments if needed, and avoid destructive actions.\n"
+                    "- Use only containerized build/test targets (make both/test-both/lint) and file edits.\n"
+                    "- Any git operation is forbidden.\n\n"
+                )
                 prompt = read_text(claimed_file)
-                rc, out, err = invoke_codex_exec(prompt)
+                effective_prompt = guardrails + prompt
+                rc, out, err = invoke_codex_exec(effective_prompt)
                 if rc != 0:
                     # append failure diagnostics, then move to failed/
                     failure_footer = (
@@ -339,6 +349,14 @@ class Watcher:
         issue_num = extract_issue_number(path)
         if issue_num is None:
             return
+        # Write a closed marker under admin/closed for dependency checks
+        try:
+            DIR_ADMIN_CLOSED.mkdir(parents=True, exist_ok=True)
+            marker = DIR_ADMIN_CLOSED / f"{issue_num}.closed"
+            if not marker.exists():
+                marker.write_text(str(int(time.time())), encoding='utf-8')
+        except Exception:
+            pass
         # Refresh edges map in case it changed
         self.edges_map = load_edges_map(FILE_EDGES)
         downstream = self.edges_map.get(issue_num, set())
@@ -351,8 +369,8 @@ class Watcher:
                     dest = DIR_OPEN / blocked_prompt.name
                     if safe_move(blocked_prompt, dest):
                         actions += 1
-        if actions > 0:
-            print_report(self.workers)
+        # Print a report whenever we took any action (marker/unlocks)
+        print_report(self.workers)
 
     def _handle_failed_file(self, path: Path) -> None:
         issue_num = extract_issue_number(path)
@@ -372,7 +390,14 @@ class Watcher:
             print_report(self.workers)
             return
         # Otherwise, invoke remediation LLM
-        remediation_prompt = (
+        guardrails = (
+            "POLICY (READ CAREFULLY):\n"
+            "- DO NOT PERFORM GIT OPERATIONS. Do not run git/gh, do not commit, branch, rebase, or push.\n"
+            "- You are working in a shared branch alongside other LLMs. Expect transient conflicts; work around them, coordinate via code comments if needed, and avoid destructive actions.\n"
+            "- Use only containerized build/test targets (make both/test-both/lint) and file edits.\n"
+            "- Any git operation is forbidden.\n\n"
+        )
+        remediation_prompt = guardrails + (
             "Another LLM was working on this issue {issue} and failed. "
             "Please read the original prompt used and the stdout/stderr from the previous LLM's attempt "
             "by reading this file {filepath}. Next, examine the state of the repository and determine what went "
@@ -432,4 +457,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
