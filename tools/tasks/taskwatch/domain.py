@@ -256,6 +256,18 @@ class Watcher:
             return
         attempts = self._inc_attempt(issue)
         if attempts >= 3:
+            # Append a terminal footer and then move to dead/
+            try:
+                self.fs.append_text(
+                    file,
+                    (
+                        "\n\n## DEAD LETTER:\n\n"
+                        f"Max attempts reached on attempt {attempts}.\n"
+                        "Moving this task to the dead letter queue.\n"
+                    ),
+                )
+            except Exception:
+                pass
             self.fs.move_atomic(file, self.p.dead / file.name)
             reasons = self.p.failure_reasons / f"{issue}.txt"
             self.fs.append_text(
@@ -269,18 +281,22 @@ class Watcher:
             self.print_report(workers)
             return
         # remediation prompt
+        next_attempt = attempts + 1
         remediation = (
             POLICY_GUARDRAILS
             + (
                 "Another LLM was working on this issue {issue} and failed. "
-                "Please read the original prompt used and the stdout/stderr from the previous LLM's attempt "
-                "by reading this file {filepath}. Next, examine the state of the repository and determine what went "
-                "wrong and what could have been done differently. Are the instructions incorrect? Is there some other issue? "
-                "Either way, reason it out, then APPEND your rational to log to .slaps/failures/reasons/{issue}.txt like so:\n\n"
-                "## Attempt number {attempt}\n\nFailed because {{reason}}\n\nGoing to try {{new approach}}\n\n"
-                "Then, write a new prompt for the task and put it in the .slaps/tasks/open/ directory."
-            ).format(issue=issue, filepath=str(file), attempt=attempts)
+                "Read the entire failed task file at: {filepath}. It contains the ORIGINAL PROMPT followed by \n"
+                "'## FAILURE' with STDOUT/STDERR from the last attempt. Identify the approach the previous agent took.\n\n"
+                "Write a concise analysis and APPEND it to .slaps/failures/reasons/{issue}.txt in this exact format:\n\n"
+                "## Attempt number {attempt}\n\n"
+                "Failed because <one-paragraph reason>.\n\n"
+                "Previously tried: <one-sentence summary>.\n\n"
+                "Going to try: <one-sentence new approach>.\n\n"
+                "Now generate a NEW PROMPT for the next attempt and write it to .slaps/tasks/open/{issue}.txt.\n"
+                "At the top of the prompt, include a line: 'Attempt {next_attempt}: Tried <X>, now trying <Y> because <why>'.\n"
+                "Keep the rest of the prompt self-contained and compliant with repo rules and guardrails."
+            ).format(issue=issue, filepath=str(file), attempt=attempts, next_attempt=next_attempt)
         )
         self.llm.exec(remediation)
         self.print_report(workers)
-

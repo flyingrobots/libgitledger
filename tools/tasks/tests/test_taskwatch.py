@@ -122,10 +122,27 @@ class TaskwatchTests(unittest.TestCase):
         self.fs.write_text(self.paths.failed / "13.txt", "failed body")
         watcher.handle_failed(self.paths.failed / "13.txt", workers=[])
         self.assertFalse((self.paths.dead / "13.txt").exists())
-        # Third attempt -> dead
+        # Third attempt -> dead, and file should include DEAD LETTER footer
         self.fs.write_text(self.paths.failed / "13.txt", "failed body")
         watcher.handle_failed(self.paths.failed / "13.txt", workers=[])
-        self.assertTrue((self.paths.dead / "13.txt").exists())
+        dead_f = self.paths.dead / "13.txt"
+        self.assertTrue(dead_f.exists())
+        txt = dead_f.read_text(encoding="utf-8")
+        self.assertIn("## DEAD LETTER:", txt)
+
+    def test_watcher_failed_generates_remediation_prompt_with_history(self):
+        reporter = CaptureReporter()
+        capture_llm = FakeLLM()
+        watcher = Watcher(fs=self.fs, llm=capture_llm, reporter=reporter, paths=self.paths)
+        f = self.paths.failed / "14.txt"
+        self.fs.write_text(f, "original prompt body\n\n## FAILURE:\n\nSTDOUT: x\nSTDERR: y\n")
+        watcher.handle_failed(f, workers=[])
+        # A remediation prompt should be sent with explicit guidance
+        self.assertGreater(len(capture_llm.capture), 0)
+        prompt = capture_llm.capture[-1]
+        self.assertIn(str(self.paths.failed / "14.txt"), prompt)
+        self.assertIn("Previously tried:", prompt)
+        self.assertIn("write it to .slaps/tasks/open/14.txt", prompt)
 
 
 if __name__ == "__main__":
