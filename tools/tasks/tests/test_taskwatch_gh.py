@@ -265,9 +265,13 @@ class TestGHFlow(unittest.TestCase):
         lf = self.lock / "42.lock.txt"
         lf.parent.mkdir(parents=True, exist_ok=True)
         lf.write_text('{"worker_id": 7, "started_at": 999999999999}', encoding='utf-8')
+        # Create another lock in same pass to verify coalescing
+        lf2 = self.lock / "55.lock.txt"
+        lf2.write_text('{"worker_id": 7, "started_at": 999999999999}', encoding='utf-8')
         watcher.watch_locks()
-        # Verify a comment was posted to the wave issue
-        self.assertTrue(any(c[0] == 999 and 'SLAPS Progress Update' in c[1] for c in self.gh.comments))
+        # Verify a single coalesced comment was posted to the wave issue
+        progress = [c for c in self.gh.comments if c[0] == 999 and 'SLAPS Progress Update' in c[1]]
+        self.assertEqual(1, len(progress))
 
     def test_blocker_not_in_project_prior_wave_opens_dependent(self):
         # 60 (wave 0) blocks 61 (wave 1), 60 not added to project items
@@ -293,6 +297,44 @@ class TestGHFlow(unittest.TestCase):
                     return v.get("name") if isinstance(v, dict) else v
             return None
         self.assertEqual("open", state(61))
+
+    def test_attempt_increment_invariants_worker_failure_and_unlock(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        # Prepare issue 42 open with attempt=1
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]["id"]
+        self.gh.set_item_number_field(prj, id42, fields["slaps-attempt-count"], 1)
+        self.gh.set_item_single_select(prj, id42, fields["slaps-state"], "open")
+        # Worker fails → remediation + reopen attempt=2
+        class FailLLM:
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                return 2, "", "err"
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        w.work_issue(42, FailLLM())
+        # Read fields
+        f = self.gh.get_item_fields(prj, id42)
+        self.assertEqual('open', f.get('slaps-state'))
+        self.assertEqual('2', f.get('slaps-attempt-count'))
+        # Unlock sweep increments from failure as well (setup):
+        # Close blocker 42 so 55 can open
+        self.gh.set_item_single_select(prj, id42, fields["slaps-state"], "closed")
+        # Set 55 failure attempt=1
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id55 = items[55]["id"]
+        self.gh.set_item_number_field(prj, id55, fields["slaps-attempt-count"], 1)
+        self.gh.set_item_single_select(prj, id55, fields["slaps-state"], "failure")
+        watcher.unlock_sweep(wave=1)
+        f2 = self.gh.get_item_fields(prj, id55)
+        self.assertEqual('open', f2.get('slaps-state'))
+        self.assertEqual('2', f2.get('slaps-attempt-count'))
 
     def test_latest_tasks_comment_with_pagination(self):
         # Add two TASKS comments; second is later and should be used
