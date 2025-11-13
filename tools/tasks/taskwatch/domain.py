@@ -166,9 +166,12 @@ class Worker:
                 prompt = self.fs.read_text(dest)
                 rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
                 if rc != 0:
-                    # Append failure diagnostics
+                    # Append failure diagnostics; tolerate append errors and still route to failed/
                     footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
-                    self.fs.append_text(dest, footer)
+                    try:
+                        self.fs.append_text(dest, footer)
+                    except Exception:
+                        pass
                     self.fs.move_atomic(dest, self.p.failed / dest.name)
                 else:
                     self.fs.move_atomic(dest, self.p.closed / dest.name)

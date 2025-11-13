@@ -263,6 +263,82 @@ class TaskwatchTests(unittest.TestCase):
 
         self.assertEqual([self.paths.open / "22.txt"], self.fs.list_files(self.paths.open))
 
+    def test_malformed_edges_prevents_unlock_and_does_not_crash(self):
+        # Malformed edges: header unrelated and non-integer values
+        self.fs.write_text(self.paths.edges_csv, "alpha,beta\nfoo,bar\n")
+        # Even if raw says blockedBy, without a usable edges relation nothing should unlock
+        self.fs.write_text(self.paths.raw / "issue-41.json", json.dumps({"relationships": {"blockedBy": [40]}}))
+        self.fs.write_text(self.paths.blocked / "41.txt", "prompt 41")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "40.txt"
+        self.fs.write_text(c, "done 40")
+        # Should not crash and should not move 41
+        w.handle_closed(c, workers=[])
+        self.assertTrue((self.paths.blocked / "41.txt").exists())
+        self.assertEqual([], self.fs.list_files(self.paths.open))
+
+    def test_missing_blockedby_in_raw_does_not_unlock(self):
+        # edges exist but raw has no blockedBy list
+        self.fs.write_text(self.paths.edges_csv, "50,51\n")
+        self.fs.write_text(self.paths.raw / "issue-51.json", json.dumps({}))
+        self.fs.write_text(self.paths.blocked / "51.txt", "prompt 51")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "50.txt"
+        self.fs.write_text(c, "done 50")
+        w.handle_closed(c, workers=[])
+        self.assertTrue((self.paths.blocked / "51.txt").exists())
+        self.assertEqual([], self.fs.list_files(self.paths.open))
+
+    def test_double_close_event_is_idempotent(self):
+        self.fs.write_text(self.paths.edges_csv, "60,61\n")
+        self.fs.write_text(self.paths.raw / "issue-61.json", json.dumps({"relationships": {"blockedBy": [60]}}))
+        self.fs.write_text(self.paths.blocked / "61.txt", "prompt 61")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "60.txt"
+        self.fs.write_text(c, "done 60")
+        w.handle_closed(c, workers=[])
+        # second call should not duplicate or crash
+        w.handle_closed(c, workers=[])
+        opens = self.fs.list_files(self.paths.open)
+        self.assertEqual([self.paths.open / "61.txt"], opens)
+
+    def test_preexisting_closed_marker_still_unlocks(self):
+        self.fs.write_text(self.paths.edges_csv, "70,71\n")
+        self.fs.write_text(self.paths.raw / "issue-71.json", json.dumps({"relationships": {"blockedBy": [70]}}))
+        self.fs.write_text(self.paths.blocked / "71.txt", "prompt 71")
+        # Pre-create closed marker for 70
+        marker = self.paths.admin_closed / "70.closed"
+        self.fs.write_text(marker, "1")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "70.txt"
+        self.fs.write_text(c, "done 70")
+        w.handle_closed(c, workers=[])
+        self.assertEqual([self.paths.open / "71.txt"], self.fs.list_files(self.paths.open))
+
+    def test_missing_codex_treated_as_failure(self):
+        # rc=127 simulates missing binary
+        self.fs.write_text(self.paths.open / "81.txt", "task body")
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=127), paths=self.paths)
+        self.assertTrue(w.run_once())
+        failed = self.fs.list_files(self.paths.failed)
+        self.assertEqual(1, len(failed))
+        txt = failed[0].read_text(encoding="utf-8")
+        self.assertIn("## FAILURE:", txt)
+
+    def test_append_failure_does_not_crash_and_still_routes_to_failed(self):
+        class AppendFailFS(LocalFS):
+            def append_text(self, p: Path, text: str) -> None:
+                raise IOError("simulated append failure")
+
+        fs = AppendFailFS()
+        paths = default_paths(self.root)
+        ensure_dirs(fs, paths)
+        fs.write_text(paths.open / "82.txt", "task body")
+        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=2), paths=paths)
+        # Should not raise
+        self.assertTrue(w.run_once())
+        self.assertEqual([paths.failed / "82.txt"], fs.list_files(paths.failed))
+
 
 if __name__ == "__main__":
     unittest.main()
