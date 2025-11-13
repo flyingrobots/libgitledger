@@ -156,17 +156,49 @@ class Worker:
         self.fs.mkdirs(self.p.claimed / str(self.worker_id))
 
     def run_once(self) -> bool:
-        # Try claim one task
+        # Enforce at most one claimed task per worker.
         claimed_dir = self.p.claimed / str(self.worker_id)
+        claimed_files = list_sorted_txt(self.fs, claimed_dir)
+        if len(claimed_files) > 1:
+            # Corruption safety: move extras to failed with a diagnostic footer.
+            keep = claimed_files[0]
+            for extra in claimed_files[1:]:
+                try:
+                    self.fs.append_text(
+                        extra,
+                        "\n\n## CLAIM CORRUPTION:\n\nMultiple claimed tasks detected; moving this extra file to failed.\n",
+                    )
+                except Exception:
+                    pass
+                self.fs.move_atomic(extra, self.p.failed / extra.name)
+            claimed_files = [keep]
+
+        # If a claimed file exists, process it before claiming new work.
+        if claimed_files:
+            dest = claimed_files[0]
+            self.current_issue = extract_issue_number(dest)
+            prompt = self.fs.read_text(dest)
+            rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
+            if rc != 0:
+                footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
+                try:
+                    self.fs.append_text(dest, footer)
+                except Exception:
+                    pass
+                self.fs.move_atomic(dest, self.p.failed / dest.name)
+            else:
+                self.fs.move_atomic(dest, self.p.closed / dest.name)
+            self.current_issue = None
+            return True
+
+        # Otherwise, try to claim exactly one task from open.
         for f in list_sorted_txt(self.fs, self.p.open):
             dest = claimed_dir / f.name
             if self.fs.move_atomic(f, dest):
                 self.current_issue = extract_issue_number(dest)
-                # Execute
                 prompt = self.fs.read_text(dest)
                 rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
                 if rc != 0:
-                    # Append failure diagnostics; tolerate append errors and still route to failed/
                     footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
                     try:
                         self.fs.append_text(dest, footer)

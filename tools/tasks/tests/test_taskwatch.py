@@ -350,6 +350,25 @@ class TaskwatchTests(unittest.TestCase):
         remaining = fs.list_files(claimed_dir)
         self.assertEqual([claimed_dir / "202.txt"], remaining)
 
+    def test_worker_does_not_claim_when_claimed_has_file(self):
+        # Existing claimed file for worker 1
+        claimed = self.paths.claimed / "1"
+        (claimed).mkdir(parents=True, exist_ok=True)
+        self.fs.write_text(claimed / "300.txt", "stuck task")
+        # Also an open task present
+        self.fs.write_text(self.paths.open / "301.txt", "new task")
+        # LLM returns failure so file routes to failed
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=2), paths=self.paths)
+        # First run processes claimed file; should not claim new yet
+        self.assertTrue(w.run_once())
+        # Claimed directory should now be empty (moved to failed)
+        self.assertEqual([], self.fs.list_files(claimed))
+        # Open still has the new task because it wasn't claimed yet
+        self.assertEqual([self.paths.open / "301.txt"], self.fs.list_files(self.paths.open))
+        # Second run now claims the open task
+        self.assertTrue(w.run_once())
+        self.assertEqual([], self.fs.list_files(self.paths.open))
+
     def test_case_insensitive_blockedby_key(self):
         self.fs.write_text(self.paths.edges_csv, "301,302\n")
         # use lowercase 'blockedby'
