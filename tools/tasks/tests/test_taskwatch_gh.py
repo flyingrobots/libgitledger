@@ -673,6 +673,67 @@ class TestGHFlow(unittest.TestCase):
         f = self.gh.get_item_fields(prj, id99)
         self.assertEqual('blocked', f.get('slaps-state'))
 
+    def test_dead_blocker_does_not_unlock_dependent(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        # 42 dead; 55 blocked by 42
+        self.gh.set_item_single_select(prj, items[42]['id'], fields['slaps-state'], 'dead')
+        self.gh.set_item_single_select(prj, items[55]['id'], fields['slaps-state'], 'blocked')
+        watcher.unlock_sweep(wave=1)
+        f = self.gh.get_item_fields(prj, items[55]['id'])
+        self.assertEqual('blocked', f.get('slaps-state'))
+
+    def test_open_root_with_no_blockers_opens_on_sweep(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        # Add a wave-1 issue 70 with no blockers
+        self.gh.wave_map[70] = 1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        self.gh.ensure_issue_in_project(prj, 70)
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id70 = items[70]['id']
+        self.gh.set_item_single_select(prj, id70, fields['slaps-state'], 'blocked')
+        watcher.unlock_sweep(wave=1)
+        f = self.gh.get_item_fields(prj, id70)
+        self.assertEqual('open', f.get('slaps-state'))
+
+    def test_multiple_blockers_require_all_satisfied(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        # Add issue 80 (wave 1) blocked by 42 and 55
+        self.gh.wave_map[80] = 1
+        self.gh.blockers[80] = [42, 55]
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        self.gh.ensure_issue_in_project(prj, 80)
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        id55 = items[55]['id']
+        id80 = items[80]['id']
+        # Close only 42; 55 remains blocked
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'closed')
+        self.gh.set_item_single_select(prj, id55, fields['slaps-state'], 'blocked')
+        self.gh.set_item_single_select(prj, id80, fields['slaps-state'], 'blocked')
+        watcher.unlock_sweep(wave=1)
+        f = self.gh.get_item_fields(prj, id80)
+        self.assertEqual('blocked', f.get('slaps-state'))
+
     def test_remediation_comment_and_next_prompt(self):
         # Failure <3 should post New Approach with Prompt used next time
         reporter = type("R", (), {"report": lambda self, s: None})()
