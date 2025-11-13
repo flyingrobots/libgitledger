@@ -251,6 +251,37 @@ tasks-test:
 
 .PHONY: logs-view
 logs-view:
-	@echo "Starting tmux log viewer (session: slaps-logs)"
+	@echo "Starting tmux log viewer (sane default): reuse + follow + iTerm2 attach"
+	@python3 tools/tasks/log_viewer.py --reuse --follow & sleep 1; tmux -CC attach -t slaps-logs
+
+.PHONY: logs-view-iterm
+logs-view-iterm:
+	@echo "Starting tmux log viewer with iTerm2 integration (tmux -CC)"
+	@python3 tools/tasks/log_viewer.py --iterm
+
+.PHONY: logs-view-reuse
+logs-view-reuse:
+	@echo "Reusing existing tmux session (slaps-logs), adding missing windows"
+	@python3 tools/tasks/log_viewer.py --reuse
+	@tmux attach -t slaps-logs
+
+.PHONY: logs-view-iterm-reuse
+logs-view-iterm-reuse:
+	@echo "Reusing tmux session with iTerm2 integration"
+	@python3 tools/tasks/log_viewer.py --reuse --iterm
+
+.PHONY: logs-view-follow
+logs-view-follow:
+	@echo "Starting log viewer follow mode (runs until Ctrl-C)"
+	@python3 tools/tasks/log_viewer.py --reuse --follow
+
+.PHONY: logs-view-iterm-follow
+logs-view-iterm-follow:
+	@echo "Starting log viewer follow mode (reuse) and attach via iTerm2"
+	@python3 tools/tasks/log_viewer.py --reuse --follow & sleep 1; tmux -CC attach -t slaps-logs
+
+.PHONY: logs-view-classic
+logs-view-classic:
+	@echo "Starting tmux log viewer (classic attach, no -CC)"
 	@python3 tools/tasks/log_viewer.py
 	@tmux attach -t slaps-logs
