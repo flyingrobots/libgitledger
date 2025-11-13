@@ -147,12 +147,13 @@ def blockers_all_closed(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
 
 
 class Worker:
-    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths, reporter: ReporterPort | None = None):
+    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths, reporter: ReporterPort | None = None, allowed_issues: Optional[Set[int]] = None):
         self.worker_id = worker_id
         self.fs = fs
         self.llm = llm
         self.p = paths
         self.reporter = reporter
+        self.allowed_issues = allowed_issues
         self.current_issue: Optional[int] = None
         self.started_at: Optional[float] = None
         self.estimate_sec: Optional[int] = None
@@ -214,6 +215,10 @@ class Worker:
 
         # Otherwise, try to claim exactly one task from open.
         for f in list_sorted_txt(self.fs, self.p.open):
+            # Respect wave/allowed filter
+            f_issue = extract_issue_number(f)
+            if self.allowed_issues is not None and (f_issue is None or f_issue not in self.allowed_issues):
+                continue
             dest = claimed_dir / f.name
             if self.fs.move_atomic(f, dest):
                 self.current_issue = extract_issue_number(dest)
@@ -254,15 +259,26 @@ class Worker:
         est_dir = self.p.admin / "estimates"
         self.fs.mkdirs(est_dir)
         est_file = est_dir / f"{issue}.json"
+        # Determine current attempt number (attempts file counts failures; current attempt = failures + 1)
+        attempts_path = self.p.attempts / f"{issue}.count"
+        current_attempt = 1
+        if self.fs.exists(attempts_path):
+            try:
+                n = int(self.fs.read_text(attempts_path).strip() or "0")
+                current_attempt = max(1, n + 1)
+            except Exception:
+                current_attempt = 1
         # Try cached
         if self.fs.exists(est_file):
             try:
                 data = json.loads(self.fs.read_text(est_file))
                 self.estimate_sec = int(data.get("estimate_sec", 0)) or None
                 self.timeout_sec = int(data.get("timeout_sec", 0)) or None
-                if self.reporter and self.estimate_sec and self.timeout_sec:
-                    self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {int(self.estimate_sec/60)}m; Timeout: {int(self.timeout_sec/60)}m")
-                return
+                cached_attempt = int(data.get("attempt", 0)) if isinstance(data, dict) else 0
+                if cached_attempt == current_attempt and self.estimate_sec and self.timeout_sec:
+                    if self.reporter:
+                        self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {int(self.estimate_sec/60)}m; Timeout: {int(self.timeout_sec/60)}m (cached)")
+                    return
             except Exception:
                 pass
         # Ask LLM for a fast estimate (minutes), best-effort
@@ -283,19 +299,25 @@ class Worker:
         self.estimate_sec = int(minutes * 60)
         self.timeout_sec = max(600, min(self.estimate_sec * 2, 7200))
         if self.reporter:
-            self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {minutes}m; Timeout: {int(self.timeout_sec/60)}m")
+            suffix = " (re-estimated)" if self.fs.exists(est_file) else ""
+            self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {minutes}m; Timeout: {int(self.timeout_sec/60)}m{suffix}")
         try:
-            self.fs.write_text(est_file, json.dumps({"estimate_sec": self.estimate_sec, "timeout_sec": self.timeout_sec}))
+            self.fs.write_text(est_file, json.dumps({
+                "attempt": current_attempt,
+                "estimate_sec": self.estimate_sec,
+                "timeout_sec": self.timeout_sec
+            }))
         except Exception:
             pass
 
 
 class Watcher:
-    def __init__(self, fs: FilePort, llm: LLMPort, reporter: ReporterPort, paths: Paths):
+    def __init__(self, fs: FilePort, llm: LLMPort, reporter: ReporterPort, paths: Paths, allowed_issues: Optional[Set[int]] = None):
         self.fs = fs
         self.llm = llm
         self.reporter = reporter
         self.p = paths
+        self.allowed_issues = allowed_issues
         ensure_dirs(self.fs, self.p)
         self.closed_seen = {x.name for x in self.fs.list_files(self.p.closed)}
         self.failed_seen = {x.name for x in self.fs.list_files(self.p.failed)}
@@ -332,9 +354,15 @@ class Watcher:
         completed = len(self.fs.list_files(self.p.closed))
         blocked = len(self.fs.list_files(self.p.blocked))
         dead = len(self.fs.list_files(self.p.dead))
-        # Progress (based on raw issues)
-        total = len([p for p in self.fs.list_files(self.p.raw) if p.name.startswith("issue-") and p.suffix == ".json"])
-        progressed = completed + dead
+        # Progress (based on raw issues; restrict to allowed_issues if provided)
+        all_raw = [p for p in self.fs.list_files(self.p.raw) if p.name.startswith("issue-") and p.suffix == ".json"]
+        if self.allowed_issues is not None:
+            total = len([p for p in all_raw if extract_issue_number(p) in self.allowed_issues])
+            progressed = len([p for p in self.fs.list_files(self.p.closed) if extract_issue_number(p) in self.allowed_issues]) \
+                        + len([p for p in self.fs.list_files(self.p.dead) if extract_issue_number(p) in self.allowed_issues])
+        else:
+            total = len(all_raw)
+            progressed = completed + dead
         pct = int((progressed / total) * 100) if total else 0
         bar_width = 60
         filled = int((pct / 100) * bar_width)
@@ -381,6 +409,8 @@ class Watcher:
                     dest = self.p.open / blocked_prompt.name
                     # Avoid clobbering if a newer open prompt already exists (e.g., remediation created it).
                     if not self.fs.exists(dest):
+                        if self.allowed_issues is not None and dep not in self.allowed_issues:
+                            continue
                         self.fs.move_atomic(blocked_prompt, dest)
                         if self.reporter:
                             self.reporter.report(f"[SYSTEM] Moved task #{dep} to open")
@@ -476,12 +506,6 @@ class Watcher:
                 "Keep the rest of the prompt self-contained and compliant with repo rules and guardrails."
             ).format(issue=issue, filepath=str(file), attempt=attempts, next_attempt=next_attempt)
         )
-        # Log retry with truncated prompt
-        try:
-            trunc = remediation.replace("\n", " ")[:50]
-            self.reporter.report(f"[SYSTEM] Retry #{issue} with prompt: {trunc}")
-        except Exception:
-            pass
         # Log retry with truncated prompt
         try:
             trunc = remediation.replace("\n", " ")[:50]

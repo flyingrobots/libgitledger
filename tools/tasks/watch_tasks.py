@@ -12,6 +12,33 @@ from pathlib import Path
 
 from .taskwatch.adapters import CodexLLM, LocalFS, RealSleeper, StdoutReporter
 from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs
+import re
+
+
+def _parse_wave_issues(wave: int) -> set[int]:
+    path = Path('docs/ROADMAP-DAG.md')
+    if not path.exists():
+        return set()
+    issues: set[int] = set()
+    current: int | None = None
+    node_re = re.compile(r"\bN(\d+)\[")
+    with path.open('r', encoding='utf-8') as f:
+        for line in f:
+            m = re.search(r"subgraph\\s+Phase(\\d+)", line)
+            if m:
+                current = int(m.group(1))
+                continue
+            if line.strip() == 'end':
+                current = None
+                continue
+            if current is not None and current == wave:
+                nm = node_re.search(line)
+                if nm:
+                    try:
+                        issues.add(int(nm.group(1)))
+                    except Exception:
+                        pass
+    return issues
 
 
 def run() -> int:
@@ -21,6 +48,25 @@ def run() -> int:
     reporter = StdoutReporter()
     sleeper = RealSleeper()
     paths = default_paths(base)
+
+    # Parse optional wave selection from argv/env
+    wave = None
+    args = sys.argv[1:]
+    for i in range(len(args)):
+        if args[i] == '--wave' and i + 1 < len(args):
+            try:
+                wave = int(args[i + 1])
+            except Exception:
+                wave = None
+            break
+    if wave is None:
+        try:
+            wave = int(os.environ.get('TASK_WAVE', ''))
+        except Exception:
+            wave = None
+    allowed_issues = _parse_wave_issues(wave) if wave else None
+    if allowed_issues:
+        reporter.report(f"[SYSTEM] Wave filter active: Phase {wave} with {len(allowed_issues)} tasks")
 
     # Ensure directories exist before device checks
     ensure_dirs(fs, paths)
@@ -37,7 +83,7 @@ def run() -> int:
     except Exception as e:
         reporter.report(f"WARNING: device check failed: {e}")
 
-    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths)
+    watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths, allowed_issues=allowed_issues)
 
     stop_event = threading.Event()
     workers: list[Worker] = []
@@ -53,7 +99,7 @@ def run() -> int:
     # Start workers
     n = os.cpu_count() or 1
     for i in range(1, n + 1):
-        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter)
+        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter, allowed_issues=allowed_issues)
         workers.append(w)
         t = threading.Thread(target=worker_thread, name=f"worker-{i}", args=(w,), daemon=True)
         t.start()
