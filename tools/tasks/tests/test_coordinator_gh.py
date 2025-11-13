@@ -124,6 +124,37 @@ class CoordinatorGHUnitTests(unittest.TestCase):
         comments = [c for c in gh.comments if c[0] == 1002]
         self.assertEqual(1, len(comments))
 
+    def test_progress_comment_handles_gh_errors(self):
+        from tools.tasks.coordinator_gh import CoordinatorGH
+        class ErrGH(FakeGH):
+            def add_comment(self, issue_number: int, body_markdown: str):
+                raise RuntimeError('boom')
+        gh = ErrGH()
+        watcher = self._watcher(gh)
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        project = watcher.state.project
+        coord = CoordinatorGH(gh)
+        # Should not raise
+        try:
+            coord.post_progress_comment(project, wave_issue=2002, wave=1)
+        except Exception as e:
+            self.fail(f"post_progress_comment raised: {e}")
+
+    def test_compose_progress_handles_list_items_error(self):
+        from tools.tasks.coordinator_gh import CoordinatorGH
+        class ErrListGH(FakeGH):
+            def list_items(self, project):
+                raise RuntimeError('fail list')
+        gh = ErrListGH()
+        watcher = self._watcher(gh)
+        watcher.preflight(wave=1)
+        project = watcher.state.project
+        coord = CoordinatorGH(gh)
+        # Should return a minimal MD even on error
+        md = coord.compose_progress_md(project, wave=1)
+        self.assertIn('SLAPS Progress Update', md)
+
 
 if __name__ == "__main__":
     unittest.main()

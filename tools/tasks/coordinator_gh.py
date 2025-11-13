@@ -49,7 +49,10 @@ class CoordinatorGH:
         return counts.get("dead", 0) > 0
 
     def compose_progress_md(self, project: GHProject, wave: int) -> str:
-        items = self.gh.list_items(project)
+        try:
+            items = self.gh.list_items(project)
+        except Exception:
+            items = []
         # Helpers
         def fval(it, name):
             for f in it.get('fields') or []:
@@ -76,7 +79,11 @@ class CoordinatorGH:
             elif st == 'claimed': claimed_issues.append(num)
         blocked_lines = []
         for n in blocked_issues:
-            for b in self.gh.get_blockers(n) or []:
+            try:
+                bs = self.gh.get_blockers(n) or []
+            except Exception:
+                bs = []
+            for b in bs:
                 blocked_lines.append(f"- (#{n})-[blocked by]->(#{b})")
         wave_status = 'pending'
         if dead_issues:
@@ -103,5 +110,9 @@ class CoordinatorGH:
         now = _t.time()
         if self.debounce_sec <= 0 or (now - self._last_post_ts) >= self.debounce_sec:
             md = self.compose_progress_md(project, wave)
-            self.gh.add_comment(wave_issue, md)
+            try:
+                self.gh.add_comment(wave_issue, md)
+            except Exception:
+                # swallow comment failures; progress composition worked
+                pass
             self._last_post_ts = now
