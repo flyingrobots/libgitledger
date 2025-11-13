@@ -146,11 +146,12 @@ def blockers_all_closed(fs: FilePort, p: Paths, blockers: Set[int]) -> bool:
 
 
 class Worker:
-    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths):
+    def __init__(self, worker_id: int, fs: FilePort, llm: LLMPort, paths: Paths, reporter: ReporterPort | None = None):
         self.worker_id = worker_id
         self.fs = fs
         self.llm = llm
         self.p = paths
+        self.reporter = reporter
         self.current_issue: Optional[int] = None
         # ensure claimed dir exists
         self.fs.mkdirs(self.p.claimed / str(self.worker_id))
@@ -171,6 +172,9 @@ class Worker:
                 except Exception:
                     pass
                 self.fs.move_atomic(extra, self.p.failed / extra.name)
+                if self.reporter:
+                    num = extract_issue_number(extra)
+                    self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
             claimed_files = [keep]
 
         # If a claimed file exists, process it before claiming new work.
@@ -186,8 +190,16 @@ class Worker:
                 except Exception:
                     pass
                 self.fs.move_atomic(dest, self.p.failed / dest.name)
+                if self.reporter:
+                    num = extract_issue_number(dest)
+                    self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
+                    self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
             else:
                 self.fs.move_atomic(dest, self.p.closed / dest.name)
+                if self.reporter:
+                    num = extract_issue_number(dest)
+                    self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
+                    self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
             self.current_issue = None
             return True
 
@@ -196,6 +208,8 @@ class Worker:
             dest = claimed_dir / f.name
             if self.fs.move_atomic(f, dest):
                 self.current_issue = extract_issue_number(dest)
+                if self.reporter:
+                    self.reporter.report(f"[SYSTEM] Moved task #{self.current_issue} to claimed")
                 prompt = self.fs.read_text(dest)
                 rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
                 if rc != 0:
@@ -205,8 +219,16 @@ class Worker:
                     except Exception:
                         pass
                     self.fs.move_atomic(dest, self.p.failed / dest.name)
+                    if self.reporter:
+                        num = extract_issue_number(dest)
+                        self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{num}: {err.strip()[:200]}; exit code {rc}")
+                        self.reporter.report(f"[SYSTEM] Moved task #{num} to failed")
                 else:
                     self.fs.move_atomic(dest, self.p.closed / dest.name)
+                    if self.reporter:
+                        num = extract_issue_number(dest)
+                        self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
+                        self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
                 self.current_issue = None
                 return True
         return False
@@ -233,6 +255,23 @@ class Watcher:
         completed = len(self.fs.list_files(self.p.closed))
         blocked = len(self.fs.list_files(self.p.blocked))
         dead = len(self.fs.list_files(self.p.dead))
+        # Progress (based on raw issues)
+        total = len([p for p in self.fs.list_files(self.p.raw) if p.name.startswith("issue-") and p.suffix == ".json"])
+        progressed = completed + dead
+        pct = int((progressed / total) * 100) if total else 0
+        bar_width = 60
+        filled = int((pct / 100) * bar_width)
+        bar = ("█" * filled) + ("░" * (bar_width - filled))
+        ticks = "|     |     |     |     |     |     |     |     |     |     |"
+        ruler = "0••••10••••20••••30••••40••••50••••60••••70••••80••••90•••100"
+        lines += [
+            "",
+            f"PROGRESS: {pct}% [{progressed} of {total}]",
+            bar,
+            ticks,
+            ruler,
+            "",
+        ]
         lines += [
             "FAILURES",
             f"{failures} failures",
@@ -266,6 +305,8 @@ class Watcher:
                     # Avoid clobbering if a newer open prompt already exists (e.g., remediation created it).
                     if not self.fs.exists(dest):
                         self.fs.move_atomic(blocked_prompt, dest)
+                        if self.reporter:
+                            self.reporter.report(f"[SYSTEM] Moved task #{dep} to open")
 
     def handle_closed(self, file: Path, workers: List[Worker]) -> None:
         issue = extract_issue_number(file)
@@ -358,5 +399,11 @@ class Watcher:
                 "Keep the rest of the prompt self-contained and compliant with repo rules and guardrails."
             ).format(issue=issue, filepath=str(file), attempt=attempts, next_attempt=next_attempt)
         )
+        # Log retry with truncated prompt
+        try:
+            trunc = remediation.replace("\n", " ")[:50]
+            self.reporter.report(f"[SYSTEM] Retry #{issue} with prompt: {trunc}")
+        except Exception:
+            pass
         self.llm.exec(remediation)
         self.print_report(workers)

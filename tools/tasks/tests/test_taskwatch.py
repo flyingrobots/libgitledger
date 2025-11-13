@@ -72,7 +72,7 @@ class TaskwatchTests(unittest.TestCase):
         open_f = self.paths.open / "10.txt"
         self.fs.write_text(open_f, "do the thing")
         llm = FakeLLM(rc=0)
-        w = Worker(worker_id=1, fs=self.fs, llm=llm, paths=self.paths)
+        w = Worker(worker_id=1, fs=self.fs, llm=llm, paths=self.paths, reporter=CaptureReporter())
 
         # Act
         worked = w.run_once()
@@ -91,7 +91,7 @@ class TaskwatchTests(unittest.TestCase):
         open_f = self.paths.open / "11.txt"
         self.fs.write_text(open_f, "do the thing (fail)")
         llm = FakeLLM(rc=2)
-        w = Worker(worker_id=1, fs=self.fs, llm=llm, paths=self.paths)
+        w = Worker(worker_id=1, fs=self.fs, llm=llm, paths=self.paths, reporter=CaptureReporter())
 
         # Act
         worked = w.run_once()
@@ -179,7 +179,7 @@ class TaskwatchTests(unittest.TestCase):
 
     def test_worker_ignores_non_txt(self):
         self.fs.write_text(self.paths.open / "17.md", "ignored")
-        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths, reporter=CaptureReporter())
         worked = w.run_once()
         self.assertFalse(worked)
         self.assertTrue((self.paths.open / "17.md").exists())
@@ -187,8 +187,8 @@ class TaskwatchTests(unittest.TestCase):
     def test_two_workers_only_one_claims(self):
         # Arrange: one open task
         self.fs.write_text(self.paths.open / "16.txt", "task")
-        w1 = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
-        w2 = Worker(worker_id=2, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        w1 = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths, reporter=CaptureReporter())
+        w2 = Worker(worker_id=2, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths, reporter=CaptureReporter())
         # Act
         r1 = w1.run_once()
         r2 = w2.run_once()
@@ -304,7 +304,7 @@ class TaskwatchTests(unittest.TestCase):
         self.fs.write_text(self.paths.open / "100.txt", "x")
         self.fs.write_text(self.paths.open / "2.txt", "x")
         self.fs.write_text(self.paths.open / "10.txt", "x")
-        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths, reporter=CaptureReporter())
         # First claim should pick 10.txt (lexicographic: 10 < 100 < 2)
         self.assertTrue(w.run_once())
         closed_names = [p.name for p in self.fs.list_files(self.paths.closed)]
@@ -326,7 +326,7 @@ class TaskwatchTests(unittest.TestCase):
         paths = default_paths(self.root)
         ensure_dirs(fs, paths)
         fs.write_text(paths.open / "201.txt", "task")
-        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths)
+        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths, reporter=CaptureReporter())
         self.assertFalse(w.run_once())  # no claim -> returns False
         # File remains in open/
         self.assertEqual([paths.open / "201.txt"], fs.list_files(paths.open))
@@ -343,7 +343,7 @@ class TaskwatchTests(unittest.TestCase):
         paths = default_paths(self.root)
         ensure_dirs(fs, paths)
         fs.write_text(paths.open / "202.txt", "task")
-        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths)
+        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths, reporter=CaptureReporter())
         self.assertTrue(w.run_once())  # claimed and executed
         # File should still exist in claimed since routing failed
         claimed_dir = paths.claimed / "1"
@@ -358,7 +358,7 @@ class TaskwatchTests(unittest.TestCase):
         # Also an open task present
         self.fs.write_text(self.paths.open / "301.txt", "new task")
         # LLM returns failure so file routes to failed
-        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=2), paths=self.paths)
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=2), paths=self.paths, reporter=CaptureReporter())
         # First run processes claimed file; should not claim new yet
         self.assertTrue(w.run_once())
         # Claimed directory should now be empty (moved to failed)

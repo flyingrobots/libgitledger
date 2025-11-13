@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .taskwatch.adapters import CodexLLM, LocalFS, RealSleeper, StdoutReporter
-from .taskwatch.domain import Watcher, Worker, default_paths
+from .taskwatch.domain import Watcher, Worker, default_paths, ensure_dirs
 
 
 def run() -> int:
@@ -21,6 +21,21 @@ def run() -> int:
     reporter = StdoutReporter()
     sleeper = RealSleeper()
     paths = default_paths(base)
+
+    # Ensure directories exist before device checks
+    ensure_dirs(fs, paths)
+
+    # Sanity: verify all task directories reside on the same filesystem device so
+    # atomic os.replace acts as our mutex. If not, abort loudly.
+    try:
+        devs = set()
+        for d in [paths.open, paths.blocked, paths.claimed, paths.closed, paths.failed, paths.dead, paths.admin, paths.raw]:
+            devs.add((d.stat().st_dev, d))
+        if len({dev for dev, _ in devs}) != 1:
+            reporter.report("ERROR: .slaps/tasks subdirectories are on different filesystems; atomic rename cannot be guaranteed. Please place them on the same device.")
+            return 2
+    except Exception as e:
+        reporter.report(f"WARNING: device check failed: {e}")
 
     watcher = Watcher(fs=fs, llm=llm, reporter=reporter, paths=paths)
 
@@ -38,7 +53,7 @@ def run() -> int:
     # Start workers
     n = os.cpu_count() or 1
     for i in range(1, n + 1):
-        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths)
+        w = Worker(worker_id=i, fs=fs, llm=llm, paths=paths, reporter=reporter)
         workers.append(w)
         t = threading.Thread(target=worker_thread, name=f"worker-{i}", args=(w,), daemon=True)
         t.start()
