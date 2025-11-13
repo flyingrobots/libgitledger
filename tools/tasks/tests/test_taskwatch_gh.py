@@ -531,6 +531,80 @@ class TestGHFlow(unittest.TestCase):
         fvals = self.gh.get_item_fields(prj, items[42]['id'])
         self.assertNotEqual('9', fvals.get('slaps-worker'))
 
+    def test_worker_claim_verify_mismatch_releases_lock(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        # Set open and set slaps-worker to someone else
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'open')
+        self.gh.set_item_number_field(prj, id42, fields['slaps-worker'], 123)
+        w = GHWorker(worker_id=9, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        ok = w.claim_and_verify(42, timeout=0.01)
+        self.assertFalse(ok)
+        self.assertFalse((self.lock / '42.lock.txt').exists())
+
+    def test_two_workers_race_claim_gh(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        # Set open
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'open')
+        w1 = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                      locks=self.lock, project=prj, fields=fields)
+        w2 = GHWorker(worker_id=2, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                      locks=self.lock, project=prj, fields=fields)
+        c1 = w1._atomic_lock_create(42)
+        c2 = w2._atomic_lock_create(42)
+        self.assertEqual(1, int(c1) + int(c2))
+        # Leader processes lock
+        watcher.watch_locks()
+        f = self.gh.get_item_fields(prj, id42)
+        self.assertEqual('claimed', f.get('slaps-state'))
+
+    def test_preflight_ensures_labels_present(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        gh = self.gh
+        watcher = GHWatcher(gh=gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.preflight(wave=1)
+        self.assertTrue({'slaps-wip', 'slaps-did-it', 'slaps-failed'}.issubset(gh.labels))
+
+    def test_unlock_sweep_ignores_other_wave(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        # Manually add an item for wave 2 and blocked state
+        # FakeGH ensures issues exist by number; add project item and set wave=2
+        self.gh.ensure_issue_in_project(prj, 99)
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id99 = items[99]['id']
+        self.gh.set_item_number_field(prj, id99, fields['slaps-wave'], 2)
+        self.gh.set_item_single_select(prj, id99, fields['slaps-state'], 'blocked')
+        # Unlock sweep for wave 1 should not touch wave 2 item
+        watcher.unlock_sweep(wave=1)
+        f = self.gh.get_item_fields(prj, id99)
+        self.assertEqual('blocked', f.get('slaps-state'))
+
     def test_remediation_comment_and_next_prompt(self):
         # Failure <3 should post New Approach with Prompt used next time
         reporter = type("R", (), {"report": lambda self, s: None})()
