@@ -27,6 +27,26 @@ class FakeLLM(LLMPort):
             return 0, "ok", ""
         return self.rc, "oops", "bad"
 
+class FakeLLMWriter(LLMPort):
+    """LLM that writes a new prompt to open/{issue}.txt when invoked by handle_failed."""
+    def __init__(self, fs: FilePort, paths):
+        self.fs = fs
+        self.paths = paths
+        self.capture: list[str] = []
+
+    def exec(self, prompt: str):
+        self.capture.append(prompt)
+        # Try to extract the issue number from the prompt by looking for '/open/{issue}.txt'
+        import re
+
+        m = re.search(r"\.slaps/tasks/open/(\d+)\.txt", prompt)
+        if m:
+            issue = m.group(1)
+            out = self.paths.open / f"{issue}.txt"
+            body = f"Attempt 2: Tried X, now trying Y because reasons.\nNew plan here.\n"
+            self.fs.write_text(out, body)
+        return 0, "ok", ""
+
 
 class CaptureReporter(ReporterPort):
     def __init__(self):
@@ -143,6 +163,49 @@ class TaskwatchTests(unittest.TestCase):
         self.assertIn(str(self.paths.failed / "14.txt"), prompt)
         self.assertIn("Previously tried:", prompt)
         self.assertIn("write it to .slaps/tasks/open/14.txt", prompt)
+        self.assertIn(GUARD, prompt)
+
+    def test_handle_failed_writes_new_open_prompt_via_llm(self):
+        reporter = CaptureReporter()
+        writer_llm = FakeLLMWriter(fs=self.fs, paths=self.paths)
+        watcher = Watcher(fs=self.fs, llm=writer_llm, reporter=reporter, paths=self.paths)
+        f = self.paths.failed / "15.txt"
+        self.fs.write_text(f, "original body\n\n## FAILURE:\n\nSTDOUT: s\nSTDERR: e\n")
+        watcher.handle_failed(f, workers=[])
+        # New open prompt created by the LLM writer
+        new_open = self.paths.open / "15.txt"
+        self.assertTrue(new_open.exists())
+        self.assertIn("Attempt 2:", new_open.read_text(encoding="utf-8"))
+
+    def test_worker_ignores_non_txt(self):
+        self.fs.write_text(self.paths.open / "17.md", "ignored")
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        worked = w.run_once()
+        self.assertFalse(worked)
+        self.assertTrue((self.paths.open / "17.md").exists())
+
+    def test_two_workers_only_one_claims(self):
+        # Arrange: one open task
+        self.fs.write_text(self.paths.open / "16.txt", "task")
+        w1 = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        w2 = Worker(worker_id=2, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        # Act
+        r1 = w1.run_once()
+        r2 = w2.run_once()
+        # Assert: first worked, second found nothing to claim
+        self.assertTrue(r1)
+        self.assertFalse(r2)
+        self.assertEqual(1, len(self.fs.list_files(self.paths.closed)))
+
+    def test_edges_alt_header_src_dst(self):
+        self.fs.write_text(self.paths.edges_csv, "src,dst\n31,32\n")
+        self.fs.write_text(self.paths.raw / "issue-32.json", json.dumps({"relationships": {"blockedBy": [31]}}))
+        self.fs.write_text(self.paths.blocked / "32.txt", "prompt 32")
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "31.txt"
+        self.fs.write_text(c, "done 31")
+        watcher.handle_closed(c, workers=[])
+        self.assertEqual([self.paths.open / "32.txt"], self.fs.list_files(self.paths.open))
 
     def test_unblocks_only_after_all_blockers_closed(self):
         # edges: 1->3 and 2->3, so 3 is blocked by [1,2]
