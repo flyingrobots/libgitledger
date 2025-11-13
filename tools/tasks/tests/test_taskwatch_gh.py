@@ -344,6 +344,32 @@ class TestGHFlow(unittest.TestCase):
         # Verify a single coalesced comment was posted to the wave issue
         progress = [c for c in self.gh.comments if c[0] == 999 and 'SLAPS Progress Update' in c[1]]
         self.assertEqual(1, len(progress))
+        # Clean env
+        import os
+        del os.environ['WAVE_STATUS_ISSUE']
+
+    def test_watcher_progress_debounce(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.progress_debounce_sec = 9999
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Env wave issue
+        import os
+        os.environ['WAVE_STATUS_ISSUE'] = '1000'
+        # First pass: create 42 lock and process
+        import time
+        now = int(time.time())
+        (self.lock / '42.lock.txt').write_text('{"worker_id":1,"started_at":%d}' % now, encoding='utf-8')
+        watcher.watch_locks()
+        # Second pass quickly: create 55 lock and process; debounce suppresses comment
+        (self.lock / '55.lock.txt').write_text('{"worker_id":1,"started_at":%d}' % now, encoding='utf-8')
+        watcher.watch_locks()
+        comments = [c for c in self.gh.comments if c[0] == 1000]
+        self.assertEqual(1, len(comments))
+        del os.environ['WAVE_STATUS_ISSUE']
 
     def test_blocker_not_in_project_prior_wave_opens_dependent(self):
         # 60 (wave 0) blocks 61 (wave 1), 60 not added to project items
@@ -482,6 +508,65 @@ class TestGHFlow(unittest.TestCase):
         watcher.unlock_sweep(wave=1)
         f = gh.get_item_fields(prj, id55)
         self.assertEqual('failure', f.get('slaps-state'))
+
+    def test_worker_claim_timeout_releases_lock(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        # Have 42 open
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        self.gh.set_item_single_select(prj, items[42]["id"], fields["slaps-state"], "open")
+        # Worker creates lock but watcher won't claim; verify timeout returns False and lock removed
+        w = GHWorker(worker_id=9, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        # create lock and immediately call claim_and_verify with tiny timeout; since watcher isn't run, verify fails and lock is deleted
+        ok = w.claim_and_verify(42, timeout=0.01)
+        self.assertFalse(ok)
+        self.assertFalse((self.lock / '42.lock.txt').exists())
+        fvals = self.gh.get_item_fields(prj, items[42]['id'])
+        self.assertNotEqual('9', fvals.get('slaps-worker'))
+
+    def test_remediation_comment_and_next_prompt(self):
+        # Failure <3 should post New Approach with Prompt used next time
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        # Set attempt=1 open
+        self.gh.set_item_number_field(prj, id42, fields['slaps-attempt-count'], 1)
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'open')
+        class PlanLLM:
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                # Return a New Approach comment with a Prompt block "NEXTPROMPT"
+                return 0, "## TASKS New Approach\n\n## Prompt\n\n```text\nNEXTPROMPT\n```\n", ""
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        # Fail path: simulate rc!=0 by directly calling work_issue with a fake LLM that returns rc==0 for remediation
+        class FailThenPlan:
+            def __init__(self):
+                self.called = 0
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                if self.called == 0:
+                    self.called += 1
+                    return 2, '', 'bad'
+                # second call is remediation prompt
+                return PlanLLM().exec(prompt, timeout, out_path, err_path)
+        w.work_issue(42, FailThenPlan())
+        # Verify New Approach comment present and next prompt picks it
+        self.assertTrue(any('TASKS New Approach' in c[1] for c in self.gh.comments))
+        nprompt = w._compose_prompt(42)
+        self.assertEqual('NEXTPROMPT', nprompt)
 
     def test_latest_tasks_comment_over_100(self):
         # 120 comments; latest should win
