@@ -19,7 +19,7 @@ class FakeGH(GHPort):
         self.comments = []
         self.wave_map = {42: 1, 55: 1, 56: 1}
         self.blockers = {55: [42], 56: [55]}
-
+        
     def repo_owner(self) -> str:
         return self._owner
 
@@ -118,10 +118,23 @@ class FakeGH(GHPort):
     def list_issue_comments(self, issue_number: int):
         # Return comments as list of dicts in insertion order
         out = []
+        idx = 0
         for n, body in self.comments:
             if n == issue_number:
-                out.append({"createdAt": "2024-01-01T00:00:00Z", "body": body})
+                idx += 1
+                out.append({"createdAt": f"2024-01-{idx:02d}T00:00:00Z", "body": body})
         return out
+
+    def fetch_issue_json(self, issue_number: int) -> dict:
+        state = 'OPEN'
+        return {"number": issue_number, "state": state, "labels": [{"name": f"milestone::M{self.wave_map.get(issue_number, 1)}"}]}
+
+    def project_item_create_draft(self, project, title: str, body: str) -> str:
+        # ignore
+        return "DRAFT1"
+
+    def repo_name(self) -> str:
+        return "repo"
 
 
 class TestGHFlow(unittest.TestCase):
@@ -152,6 +165,8 @@ class TestGHFlow(unittest.TestCase):
         reporter = type("R", (), {"report": lambda self, s: None})()
         watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
                             raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        # Make this watcher leader immediately and with a long TTL
+        watcher.leader_ttl_sec = -1  # force leader
         watcher.preflight(wave=1)
         watcher.initialize_items(wave=1)
         watcher.unlock_sweep(wave=1)
@@ -183,6 +198,69 @@ class TestGHFlow(unittest.TestCase):
         watcher.unlock_sweep(wave=1)
         items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
         self.assertEqual("open", state(55))
+
+    def test_stale_lock_cleanup(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.lock_ttl_sec = 0  # immediately stale
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Create a stale lock
+        lf = self.lock / "42.lock.txt"
+        lf.parent.mkdir(parents=True, exist_ok=True)
+        lf.write_text('{"worker_id": 9, "started_at": 1}', encoding='utf-8')
+        watcher.watch_locks()
+        self.assertFalse(lf.exists())
+
+    def test_non_leader_stands_down(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        # Write fresh leader heartbeat (another watcher)
+        watcher.leader_ttl_sec = 60
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        hb = watcher.leader_heartbeat
+        hb.write_text('{"pid":1,"host":"x","ts": 999999999999}', encoding='utf-8')
+        # Create a lock, but watch_locks should do nothing since not leader
+        lf = self.lock / "42.lock.txt"
+        lf.parent.mkdir(parents=True, exist_ok=True)
+        lf.write_text('{"worker_id": 1, "started_at": 999999999999}', encoding='utf-8')
+        watcher.watch_locks()
+        # No claimed since not leader
+        prj = watcher.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        def state(num):
+            it = items.get(num)
+            if not it:
+                return None
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertNotEqual("claimed", state(42))
+
+    def test_latest_tasks_comment_with_pagination(self):
+        # Add two TASKS comments; second is later and should be used
+        self.gh.comments = [
+            (42, "## TASKS\n\n## Prompt\n\n```text\nold\n```"),
+            (42, "## TASKS\n\n## Prompt\n\n```text\nnew\n```"),
+        ]
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        p = w._compose_prompt(42)
+        self.assertEqual("new", p)
 
     def test_failure_to_dead_after_three_attempts(self):
         reporter = type("R", (), {"report": lambda self, s: None})()

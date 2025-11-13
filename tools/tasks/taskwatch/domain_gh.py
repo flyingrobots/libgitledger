@@ -36,6 +36,11 @@ class GHWatcher:
         self.lock_dir = lock_dir
         self.project_title = project_title
         self.state: Optional[GHState] = None
+        self.admin_dir = Path('.slaps/tasks/admin')
+        self.fs.mkdirs(self.admin_dir)
+        self.leader_heartbeat = self.admin_dir / 'gh_watcher_leader.json'
+        self.leader_ttl_sec = 15
+        self.lock_ttl_sec = 1800  # default lease window for stale lock cleanup
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
@@ -51,6 +56,48 @@ class GHWatcher:
         self.fs.mkdirs(self.lock_dir)
         self.r.report(f"[SYSTEM] GH project ready: {project.title} (#{project.number})")
         self._emit("gh_preflight", project=project.title, number=project.number)
+
+    def _now(self) -> float:
+        import time as _t
+        return _t.time()
+
+    def _is_leader(self) -> bool:
+        import json, os, socket
+        # Try to acquire leadership if there is no fresh heartbeat
+        now = self._now()
+        if self.leader_ttl_sec <= 0:
+            try:
+                payload = json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'ts': now})
+                self.leader_heartbeat.write_text(payload, encoding='utf-8')
+            except Exception:
+                pass
+            return True
+        # Read existing heartbeat
+        fresh = False
+        if self.fs.exists(self.leader_heartbeat):
+            try:
+                data = json.loads(self.leader_heartbeat.read_text(encoding='utf-8'))
+                ts = float(data.get('ts') or 0)
+                if now - ts < self.leader_ttl_sec:
+                    fresh = True
+            except Exception:
+                pass
+        if fresh:
+            return False
+        # Become leader by writing our heartbeat
+        try:
+            payload = json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'ts': now})
+            self.leader_heartbeat.write_text(payload, encoding='utf-8')
+            return True
+        except Exception:
+            return False
+
+    def _heartbeat(self) -> None:
+        import json, os, socket
+        try:
+            self.leader_heartbeat.write_text(json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'ts': self._now()}), encoding='utf-8')
+        except Exception:
+            pass
 
     def ensure_cached_issue(self, issue: int, evict: bool = False) -> None:
         raw_file = self.raw_dir / f"issue-{issue}.json"
@@ -134,6 +181,9 @@ class GHWatcher:
         return True
 
     def unlock_sweep(self, wave: int) -> None:
+        # Only leader performs unlocks to avoid double work
+        if not self._is_leader():
+            return
         assert self.state is not None
         prj = self.state.project
         f_state = self.state.field("slaps-state")
@@ -165,12 +215,28 @@ class GHWatcher:
                         self._emit("unlock_open", issue=issue)
         if opened:
             self.r.report(f"[SYSTEM] Opened {opened} issues in wave {wave}")
+        # Reconcile: if GH issue closed but slaps-state not 'closed', set it
+        for it in items:
+            issue = (it.get('content') or {}).get('number')
+            fields = { (f.get('name') or f.get('field', {}).get('name') or '').strip(): f.get('value') for f in (it.get('fields') or []) }
+            st = fields.get('slaps-state')
+            st = st.get('name') if isinstance(st, dict) else st
+            if st != 'closed':
+                try:
+                    istate = self.gh.fetch_issue_json(issue).get('state')
+                    if istate == 'CLOSED':
+                        self.gh.set_item_single_select(prj, it['id'], f_state, 'closed')
+                except Exception:
+                    pass
 
     def watch_locks(self) -> None:
         """Process new lock files by marking issues as claimed and recording the worker id in GH fields.
 
         Format of lock filename: {issue}.lock.txt ; file content should contain worker id as integer.
         """
+        # Only leader processes locks
+        if not self._is_leader():
+            return
         assert self.state is not None
         prj = self.state.project
         f_state = self.state.field("slaps-state")
@@ -179,20 +245,40 @@ class GHWatcher:
             issue = extract_issue_number(lock)
             if issue is None:
                 continue
+            # Parse lock payload
+            wid = None
+            started_at = None
             try:
-                wid = int(lock.read_text(encoding="utf-8").strip().splitlines()[0])
+                text = lock.read_text(encoding='utf-8').strip()
+                if text.startswith('{'):
+                    import json
+                    data = json.loads(text)
+                    wid = int(data.get('worker_id'))
+                    started_at = float(data.get('started_at') or 0)
+                else:
+                    wid = int(text.splitlines()[0])
             except Exception:
                 continue
+            # Stale lock cleanup
+            if started_at:
+                if self._now() - started_at > self.lock_ttl_sec:
+                    try:
+                        lock.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    continue
             item_id = self.gh.ensure_issue_in_project(prj, issue)
             self.gh.set_item_number_field(prj, item_id, f_worker, wid)
             self.gh.set_item_single_select(prj, item_id, f_state, "claimed")
             self.gh.add_label(issue, "slaps-wip")
             self._emit("claimed", issue=issue, worker=wid)
             self.r.report(f"[SYSTEM] Claimed issue #{issue} for worker {wid}")
+        # Update heartbeat at end of pass
+        self._heartbeat()
 
 
 class GHWorker:
-    def __init__(self, worker_id: int, gh: GHPort, fs: FilePort, reporter: ReporterPort, logger: Optional[JsonlLogger], locks: Path, project: GHProject, fields: Dict[str, GHField]):
+    def __init__(self, worker_id: int, gh: GHPort, fs: FilePort, reporter: ReporterPort, logger: Optional[JsonlLogger], locks: Path, project: GHProject, fields: Dict[str, GHField], wave: int | None = None, wave_issue: int | None = None):
         self.worker_id = worker_id
         self.gh = gh
         self.fs = fs
@@ -201,6 +287,8 @@ class GHWorker:
         self.locks = locks
         self.project = project
         self.fields = fields
+        self.wave = wave
+        self.wave_issue = wave_issue
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
@@ -210,10 +298,11 @@ class GHWorker:
         self.fs.mkdirs(self.locks)
         p = self.locks / f"{issue}.lock.txt"
         try:
-            # atomic create
-            fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            # atomic create JSON payload
+            import json, time as _t, os as _os
+            fd = _os.open(p, _os.O_CREAT | _os.O_EXCL | _os.O_WRONLY)
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(str(self.worker_id))
+                f.write(json.dumps({"worker_id": self.worker_id, "pid": os.getpid(), "started_at": _t.time(), "est_timeout_sec": 1200}))
             return True
         except FileExistsError:
             return False
@@ -401,6 +490,7 @@ class GHWorker:
             self._remove_lock(issue)
             self.r.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{issue}")
             self._emit("success", issue=issue)
+            self._maybe_post_progress()
             return True
         else:
             # Read current attempt count to decide dead vs remediation
@@ -417,6 +507,7 @@ class GHWorker:
                 self._remove_lock(issue)
                 self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}; marked dead")
                 self._emit("dead", issue=issue, rc=rc)
+                self._maybe_post_progress()
                 return True
             # mark failure, post details, then generate remediation plan and reopen with attempt+1
             self.gh.set_item_single_select(self.project, item_id, f_state, "failure")
@@ -445,4 +536,74 @@ class GHWorker:
             self._remove_lock(issue)
             self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}; posted remediation and reopened")
             self._emit("failure_reopen", issue=issue, rc=rc, next_attempt=cur_attempt + 1)
+            self._maybe_post_progress()
             return True
+
+    def _maybe_post_progress(self) -> None:
+        if not self.wave_issue or not self.wave:
+            return
+        try:
+            md = self._compose_progress_md(self.wave)
+            self.gh.add_comment(self.wave_issue, md)
+        except Exception:
+            pass
+
+    def _compose_progress_md(self, wave: int) -> str:
+        # Snapshot project items for this wave
+        items = self.gh.list_items(self.project)
+        # Filter by field slaps-wave == wave
+        def fval(it, name):
+            for f in it.get('fields') or []:
+                nm = (f.get('name') or f.get('field', {}).get('name') or '').strip()
+                if nm == name:
+                    v = f.get('value')
+                    return v.get('name') if isinstance(v, dict) else v
+            return None
+        inscope = [it for it in items if fval(it, 'slaps-wave') == wave]
+        open_issues = []
+        blocked_issues = []
+        closed_issues = []
+        failure_issues = []
+        dead_issues = []
+        claimed_issues = []
+        for it in inscope:
+            num = (it.get('content') or {}).get('number')
+            st = fval(it, 'slaps-state')
+            if st == 'open': open_issues.append(num)
+            elif st == 'blocked': blocked_issues.append(num)
+            elif st == 'closed': closed_issues.append(num)
+            elif st == 'failure': failure_issues.append(num)
+            elif st == 'dead': dead_issues.append(num)
+            elif st == 'claimed': claimed_issues.append(num)
+        # Blocked details
+        blocked_lines = []
+        for n in blocked_issues:
+            for b in self.gh.get_blockers(n) or []:
+                blocked_lines.append(f"- (#{n})-[blocked by]->(#{b})")
+        wave_status = 'pending'
+        if dead_issues:
+            wave_status = 'dead'
+        elif not open_issues and not blocked_issues and not failure_issues and not claimed_issues:
+            wave_status = 'complete'
+        def links(nums):
+            return ', '.join(f"#{x}" for x in sorted(nums)) if nums else '(none)'
+        md = (
+            "## SLAPS Progress Update\n\n"
+            "|  |  |\n|--|--|\n"
+            f"| **OPEN ISSUES:** | {len(open_issues)} |\n"
+            f"| **OPEN ISSUES:** | {links(open_issues)} |\n"
+            f"| **CLOSED ISSUES:** | {len(closed_issues)} |\n"
+            f"| **CLOSED ISSUES:** | {links(closed_issues)} |\n"
+            f"| **BLOCKED ISSUES:** | {len(blocked_issues)} |\n"
+            f"| **BLOCKED ISSUES:** | {'\n'.join(blocked_lines) if blocked_lines else '(none)'} |\n"
+            f"| **WAVE STATUS:** | {wave_status} |\n\n"
+            "### Issues\n\n"
+        )
+        def line(icon, n, suffix=''):
+            return f"{icon} (#{n}){suffix}"
+        rows = []
+        for n in sorted(closed_issues): rows.append(line('✅', n))
+        for n in sorted(claimed_issues): rows.append(line('⏳', n))
+        for n in sorted(dead_issues): rows.append(line('🪦', n))
+        for n in sorted(failure_issues): rows.append(line('❌', n))
+        return md + ("\n".join(rows) + "\n")

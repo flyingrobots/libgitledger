@@ -61,9 +61,18 @@ def main() -> int:
     stop = threading.Event()
     workers: list[threading.Thread] = []
 
+    wave_issue = None
+    try:
+        # If coordinator created a wave status issue, its number may be passed via env
+        wave_issue_env = os.environ.get('WAVE_STATUS_ISSUE')
+        if wave_issue_env:
+            wave_issue = int(wave_issue_env)
+    except Exception:
+        wave_issue = None
+
     def worker_loop(wid: int) -> None:
         w = GHWorker(worker_id=wid, gh=gh, fs=fs, reporter=reporter, logger=jsonl,
-                     locks=base / 'lock', project=project, fields=fields)
+                     locks=base / 'lock', project=project, fields=fields, wave=wave, wave_issue=wave_issue)
         while not stop.is_set():
             # Pick an open issue
             open_issues = w._list_open_issues(wave)
