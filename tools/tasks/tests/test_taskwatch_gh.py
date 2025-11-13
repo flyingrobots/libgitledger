@@ -165,6 +165,30 @@ class TestGHFlow(unittest.TestCase):
         items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
         self.assertEqual("open", state(55))
 
+    def test_failure_to_dead_after_three_attempts(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P2")
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = self.gh.find_item_by_issue(prj, 42)
+        # Simulate attempts already at 3 and last run failed
+        self.gh.set_item_number_field(prj, id42, fields["slaps-attempt-count"], 3)
+        self.gh.set_item_single_select(prj, id42, fields["slaps-state"], "failure")
+        # Sweep should mark dead (next_attempt>3)
+        watcher.unlock_sweep(wave=1)
+        it = next(i for i in self.gh.list_items(prj) if i["content"]["number"] == 42)
+        def st():
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertEqual("dead", st())
+
 
 if __name__ == "__main__":
     unittest.main()

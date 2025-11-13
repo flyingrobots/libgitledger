@@ -258,6 +258,7 @@ gh-tasks-test:
 slaps-watch-gh:
 	@echo "Starting GH-backed watcher for wave $(WAVE) (set with WAVE=1)"
 	@test -n "$(WAVE)" || (echo "Set WAVE, e.g. make slaps-watch-gh WAVE=1" >&2; exit 1)
+	@python3 tools/tasks/gh_preflight.py || exit 1
 	@python3 tools/tasks/watch_tasks_gh.py --wave $(WAVE)
 
 .PHONY: logs-view

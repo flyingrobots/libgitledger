@@ -144,16 +144,22 @@ class GHWatcher:
             st = self._get_field_value(fields, "slaps-state")
             if st in ("blocked", "failure"):
                 if self._blockers_satisfied(wave, issue):
-                    # Increment attempt count when moving to open
+                    # Increment attempt count; if >3, mark dead
                     f_attempt = self.state.field("slaps-attempt-count")
                     try:
                         cur = int(self._get_field_value(fields, "slaps-attempt-count") or "0")
                     except Exception:
                         cur = 0
-                    self.gh.set_item_number_field(prj, it["id"], f_attempt, cur + 1)
-                    self.gh.set_item_single_select(prj, it["id"], f_state, "open")
-                    opened += 1
-                    self._emit("unlock_open", issue=issue)
+                    next_attempt = cur + 1
+                    if next_attempt > 3:
+                        self.gh.set_item_single_select(prj, it["id"], f_state, "dead")
+                        self.gh.add_label(issue, "slaps-failed")
+                        self._emit("mark_dead", issue=issue)
+                    else:
+                        self.gh.set_item_number_field(prj, it["id"], f_attempt, next_attempt)
+                        self.gh.set_item_single_select(prj, it["id"], f_state, "open")
+                        opened += 1
+                        self._emit("unlock_open", issue=issue)
         if opened:
             self.r.report(f"[SYSTEM] Opened {opened} issues in wave {wave}")
 
@@ -371,4 +377,3 @@ class GHWorker:
             self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}")
             self._emit("failure", issue=issue, rc=rc)
             return True
-
