@@ -233,3 +233,6 @@ roadmap-validate:
 
 roadmap-refresh:
 	@$(MAKE) roadmap-validate && $(MAKE) roadmap-render
+tasks-test:
+	@echo "Running Python task watcher tests..."
+	@python3 -m unittest -q tools/tasks/tests/test_taskwatch.py

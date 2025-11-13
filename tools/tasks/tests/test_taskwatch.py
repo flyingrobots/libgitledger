@@ -361,6 +361,21 @@ class TaskwatchTests(unittest.TestCase):
         w.handle_closed(c, workers=[])
         self.assertEqual([self.paths.open / "302.txt"], self.fs.list_files(self.paths.open))
 
+    def test_unlock_skips_when_open_already_has_prompt(self):
+        # edges: 401->402
+        self.fs.write_text(self.paths.edges_csv, "401,402\n")
+        self.fs.write_text(self.paths.raw / "issue-402.json", json.dumps({"relationships": {"blockedBy": [401]}}))
+        # open already has a regenerated prompt; blocked has an older one
+        self.fs.write_text(self.paths.open / "402.txt", "newer prompt")
+        self.fs.write_text(self.paths.blocked / "402.txt", "older prompt")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "401.txt"
+        self.fs.write_text(c, "done 401")
+        w.handle_closed(c, workers=[])
+        # Ensure we did not clobber the open prompt and the blocked remains (conservative)
+        self.assertEqual("newer prompt", (self.paths.open / "402.txt").read_text(encoding="utf-8"))
+        self.assertTrue((self.paths.blocked / "402.txt").exists())
+
     def test_malformed_edges_prevents_unlock_and_does_not_crash(self):
         # Malformed edges: header unrelated and non-integer values
         self.fs.write_text(self.paths.edges_csv, "alpha,beta\nfoo,bar\n")

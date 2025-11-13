@@ -230,7 +230,10 @@ class Watcher:
             if blockers and blockers_all_closed(self.fs, self.p, blockers):
                 blocked_prompt = self.p.blocked / f"{dep}.txt"
                 if self.fs.exists(blocked_prompt):
-                    self.fs.move_atomic(blocked_prompt, self.p.open / blocked_prompt.name)
+                    dest = self.p.open / blocked_prompt.name
+                    # Avoid clobbering if a newer open prompt already exists (e.g., remediation created it).
+                    if not self.fs.exists(dest):
+                        self.fs.move_atomic(blocked_prompt, dest)
 
     def handle_closed(self, file: Path, workers: List[Worker]) -> None:
         issue = extract_issue_number(file)

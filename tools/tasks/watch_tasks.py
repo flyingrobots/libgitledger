@@ -31,7 +31,9 @@ def run() -> int:
         while not stop_event.is_set():
             worked = w.run_once()
             if not worked:
-                sleeper.sleep(25)
+                # Add jitter to avoid thundering herd: 20-30s
+                import random
+                sleeper.sleep(20 + random.random() * 10)
 
     # Start workers
     n = os.cpu_count() or 1
@@ -68,6 +70,9 @@ def run() -> int:
         watcher.failed_seen = failed_now
         for p in new_failed:
             watcher.handle_failed(p, workers)
+
+        # periodic sweep to catch unlocks from externally added markers
+        watcher.startup_sweep(workers)
 
         # finish condition
         if not fs.list_files(paths.open) and not fs.list_files(paths.blocked) and all(w.current_issue is None for w in workers):
