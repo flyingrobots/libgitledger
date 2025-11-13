@@ -252,6 +252,48 @@ class TestGHFlow(unittest.TestCase):
             return None
         self.assertNotEqual("claimed", state(42))
 
+    def test_claim_posts_progress_comment_when_wave_issue_set(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Set env wave issue and create a lock
+        import os
+        os.environ['WAVE_STATUS_ISSUE'] = '999'
+        lf = self.lock / "42.lock.txt"
+        lf.parent.mkdir(parents=True, exist_ok=True)
+        lf.write_text('{"worker_id": 7, "started_at": 999999999999}', encoding='utf-8')
+        watcher.watch_locks()
+        # Verify a comment was posted to the wave issue
+        self.assertTrue(any(c[0] == 999 and 'SLAPS Progress Update' in c[1] for c in self.gh.comments))
+
+    def test_blocker_not_in_project_prior_wave_opens_dependent(self):
+        # 60 (wave 0) blocks 61 (wave 1), 60 not added to project items
+        self.gh.wave_map[60] = 0
+        self.gh.blockers[61] = [60]
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        # Only initialize items for wave 1 (61)
+        # FakeGH.list_issues_for_wave returns those in wave_map == 1; ensure 61 added
+        self.gh.wave_map[61] = 1
+        watcher.initialize_items(wave=1)
+        watcher.unlock_sweep(wave=1)
+        prj = watcher.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        def state(num):
+            it = items[num]
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertEqual("open", state(61))
+
     def test_latest_tasks_comment_with_pagination(self):
         # Add two TASKS comments; second is later and should be used
         self.gh.comments = [

@@ -283,6 +283,18 @@ class GHWatcher:
             self.gh.add_label(issue, "slaps-wip")
             self._emit("claimed", issue=issue, worker=wid)
             self.r.report(f"[SYSTEM] Claimed issue #{issue} for worker {wid}")
+            # Optional: post progress comment to Wave Status Issue if env set
+            try:
+                import os as _os
+                wave_issue_env = _os.environ.get('WAVE_STATUS_ISSUE')
+                if wave_issue_env and wave_issue_env.isdigit():
+                    wave_issue_num = int(wave_issue_env)
+                    # Reuse worker progress composer to avoid duplication
+                    tmpw = GHWorker(worker_id=wid, gh=self.gh, fs=self.fs, reporter=self.r, logger=self.log, locks=self.lock_dir, project=prj, fields=self.state.fields, wave=_os.environ.get('TASK_WAVE') and int(_os.environ.get('TASK_WAVE')) or None, wave_issue=wave_issue_num)
+                    md = tmpw._compose_progress_md(tmpw.wave or 0)
+                    self.gh.add_comment(wave_issue_num, md)
+            except Exception:
+                pass
         # Update heartbeat at end of pass
         self._heartbeat()
 
