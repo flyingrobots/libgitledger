@@ -31,14 +31,23 @@ def parse_max_wave(roadmap: Path) -> int:
     max_wave = 0
     with roadmap.open('r', encoding='utf-8') as f:
         for line in f:
-            m = re.search(r"subgraph\\s+Phase(\\d+)", line)
+            m = re.search(r"subgraph\s+Phase(\d+)", line)
             if m:
                 max_wave = max(max_wave, int(m.group(1)))
     return max_wave
 
 
 def run_watcher(wave: int) -> int:
-    return subprocess.call([sys.executable, 'tools/tasks/watch_tasks.py', '--wave', str(wave)])
+    logs = Path('.slaps/logs')
+    logs.mkdir(parents=True, exist_ok=True)
+    out_f = (logs / 'watcher.out').open('a', encoding='utf-8')
+    err_f = (logs / 'watcher.err').open('a', encoding='utf-8')
+    try:
+        proc = subprocess.Popen([sys.executable, '-m', 'tools.tasks.watch_tasks', '--wave', str(wave)], stdout=out_f, stderr=err_f)
+        rc = proc.wait()
+        return rc
+    finally:
+        out_f.close(); err_f.close()
 
 
 def count_dead(base: Path, wave: int) -> int:

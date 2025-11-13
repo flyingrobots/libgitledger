@@ -4,30 +4,32 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+import json
 
 
-def parse_wave_map(roadmap: Path) -> dict[int, int]:
+def parse_wave_map_from_raw(raw_dir: Path) -> dict[int, int]:
     mapping: dict[int, int] = {}
-    if not roadmap.exists():
+    if not raw_dir.exists():
         return mapping
-    current: int | None = None
-    node_re = re.compile(r"\bN(\d+)\[")
-    with roadmap.open('r', encoding='utf-8') as f:
-        for line in f:
-            m = re.search(r"subgraph\s+Phase(\d+)", line)
-            if m:
-                current = int(m.group(1))
-                continue
-            if line.strip() == 'end':
-                current = None
-                continue
-            if current is not None:
-                nm = node_re.search(line)
-                if nm:
-                    try:
-                        mapping[int(nm.group(1))] = current
-                    except Exception:
-                        pass
+    for f in sorted(raw_dir.glob('issue-*.json')):
+        try:
+            data = json.loads(f.read_text(encoding='utf-8'))
+        except Exception:
+            continue
+        num = data.get('number')
+        if not isinstance(num, int):
+            continue
+        wave = None
+        # Try labels like milestone::M2
+        for lab in (data.get('labels') or []):
+            name = lab.get('name') if isinstance(lab, dict) else None
+            if isinstance(name, str):
+                m = re.search(r"milestone::M(\d+)", name)
+                if m:
+                    wave = int(m.group(1))
+                    break
+        if wave is not None:
+            mapping[num] = wave
     return mapping
 
 
@@ -70,8 +72,8 @@ def bucket(base: Path, mapping: dict[int, int]) -> dict[str, int]:
 
 def main() -> int:
     root = Path('.slaps/tasks')
-    roadmap = Path('docs/ROADMAP-DAG.md')
-    mapping = parse_wave_map(roadmap)
+    raw_dir = root / 'raw'
+    mapping = parse_wave_map_from_raw(raw_dir)
     if not mapping:
         print("No wave mapping found; aborting.", file=sys.stderr)
         return 2
@@ -82,4 +84,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
