@@ -112,9 +112,184 @@ class GHCLI(GHPort):
         return data["id"]
 
     def list_items(self, project: GHProject) -> List[dict]:
-        out = _run_ok(["gh", "project", "item-list", str(project.number), "--owner", project.owner, "--format", "json", "-L", "200"])
-        arr = json.loads(out or "[]")
-        return arr
+        # Use GraphQL to page through items and normalize to gh project item-list JSON-ish shape
+        owner = project.owner
+        number = project.number
+        items: List[dict] = []
+        cursor = None
+        while True:
+            q = {
+                "query": """
+                query($owner:String!, $number:Int!, $after:String) {
+                  user(login:$owner) { # owner may also be org; attempt user then org
+                    projectV2(number:$number) {
+                      id
+                      items(first:100, after:$after) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes {
+                          id
+                          content { ... on Issue { number } }
+                          fieldValues(first:50) {
+                            nodes {
+                              ... on ProjectV2ItemFieldSingleSelectValue { field { name dataType }
+                                name
+                              }
+                              ... on ProjectV2ItemFieldNumberValue { field { name dataType }
+                                number
+                              }
+                              ... on ProjectV2ItemFieldTextValue { field { name dataType }
+                                text
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  organization(login:$owner) {
+                    projectV2(number:$number) {
+                      id
+                      items(first:100, after:$after) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes {
+                          id
+                          content { ... on Issue { number } }
+                          fieldValues(first:50) {
+                            nodes {
+                              ... on ProjectV2ItemFieldSingleSelectValue { field { name dataType }
+                                name
+                              }
+                              ... on ProjectV2ItemFieldNumberValue { field { name dataType }
+                                number
+                              }
+                              ... on ProjectV2ItemFieldTextValue { field { name dataType }
+                                text
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """,
+                "variables": {"owner": owner, "number": number, "after": cursor}
+            }
+            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            if cp.returncode != 0:
+                # Fallback to CLI for small projects
+                out = _run_ok(["gh", "project", "item-list", str(project.number), "--owner", project.owner, "--format", "json", "-L", "200"])
+                return json.loads(out or "[]")
+            data = json.loads(cp.stdout or "{}")
+            pj = (data.get("user") or {}).get("projectV2") or (data.get("organization") or {}).get("projectV2") or {}
+            conn = pj.get("items") or {}
+            for n in conn.get("nodes", []):
+                content = n.get("content") or {}
+                num = content.get("number")
+                fields = []
+                for fv in (n.get("fieldValues") or {}).get("nodes", []):
+                    fld = (fv.get("field") or {})
+                    nm = fld.get("name")
+                    dt = fld.get("dataType")
+                    if dt == "SINGLE_SELECT":
+                        fields.append({"name": nm, "value": {"name": fv.get("name")}})
+                    elif dt == "NUMBER":
+                        fields.append({"name": nm, "value": fv.get("number")})
+                    elif dt == "TEXT":
+                        fields.append({"name": nm, "value": fv.get("text")})
+                items.append({"id": n.get("id"), "content": {"number": num}, "fields": fields})
+            page = conn.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            cursor = page.get("endCursor")
+        return items
+
+    def list_issues_for_wave(self, wave: int) -> List[int]:
+        # Query repository issues with label milestone::M{wave}
+        owner = self.repo_owner()
+        name = self.repo_name()
+        nums: List[int] = []
+        cursor = None
+        label = f"milestone::M{wave}"
+        while True:
+            q = {
+                "query": """
+                query($owner:String!, $name:String!, $label:String!, $after:String) {
+                  repository(owner:$owner, name:$name) {
+                    issues(first:100, after:$after, labels: [$label], states:[OPEN,CLOSED]) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { number labels(first:50){nodes{name}} }
+                    }
+                  }
+                }
+                """,
+                "variables": {"owner": owner, "name": name, "label": label, "after": cursor}
+            }
+            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            if cp.returncode != 0:
+                # Fallback: try gh issue list (open only)
+                out = _run_ok(["gh", "issue", "list", "--label", label, "--json", "number"])
+                return [x.get("number") for x in json.loads(out or "[]")]
+            data = json.loads(cp.stdout or "{}")
+            iss = (((data.get("repository") or {}).get("issues") or {}))
+            for n in iss.get("nodes", []):
+                nums.append(n.get("number"))
+            page = iss.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            cursor = page.get("endCursor")
+        return nums
+
+    def get_issue_wave_by_label(self, issue_number: int) -> int | None:
+        data = self.fetch_issue_json(issue_number)
+        for lab in data.get("labels") or []:
+            name = lab.get("name")
+            if isinstance(name, str) and name.startswith("milestone::M"):
+                try:
+                    return int(name.split("M", 1)[1])
+                except Exception:
+                    pass
+        return None
+
+    def get_blockers(self, issue_number: int) -> List[int]:
+        # Try GraphQL dependencies: blockedBy issues
+        owner = self.repo_owner()
+        name = self.repo_name()
+        q = {
+            "query": """
+            query($owner:String!, $name:String!, $number:Int!, $after:String) {
+              repository(owner:$owner, name:$name) {
+                issue(number:$number) {
+                  id
+                  blockedBy(first:100, after:$after) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { number }
+                  }
+                }
+              }
+            }
+            """,
+            "variables": {"owner": owner, "name": name, "number": issue_number, "after": None}
+        }
+        nums: List[int] = []
+        after = None
+        while True:
+            q["variables"]["after"] = after
+            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            if cp.returncode != 0:
+                return []  # fallback: unknown
+            data = json.loads(cp.stdout or "{}")
+            blocked = (((data.get("repository") or {}).get("issue") or {}).get("blockedBy") or {})
+            for n in blocked.get("nodes", []):
+                try:
+                    nums.append(int(n.get("number")))
+                except Exception:
+                    pass
+            pi = blocked.get("pageInfo") or {}
+            if not pi.get("hasNextPage"):
+                break
+            after = pi.get("endCursor")
+        return nums
 
     def _edit_item_field(self, project: GHProject, item_id: str, field: GHField, **kv) -> None:
         args = [

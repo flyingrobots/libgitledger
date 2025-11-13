@@ -17,6 +17,8 @@ class FakeGH(GHPort):
         self.items = {}  # project_id -> list of {id, content:{number}, fields:[{name,value}]}
         self.issue_id = {}  # number -> node id
         self.comments = []
+        self.wave_map = {42: 1, 55: 1, 56: 1}
+        self.blockers = {55: [42], 56: [55]}
 
     def repo_owner(self) -> str:
         return self._owner
@@ -61,6 +63,15 @@ class FakeGH(GHPort):
             # deep copy minimal
             arr.append({"id": it["id"], "content": dict(it["content"]), "fields": [dict(f) for f in it["fields"]]})
         return arr
+
+    def list_issues_for_wave(self, wave: int):
+        return [n for n, w in self.wave_map.items() if w == wave]
+
+    def get_blockers(self, issue_number: int):
+        return list(self.blockers.get(issue_number, []))
+
+    def get_issue_wave_by_label(self, issue_number: int):
+        return self.wave_map.get(issue_number)
 
     def _set_field(self, project, item_id: str, name: str, value):
         it = next(i for i in self.items[project.id] if i["id"] == item_id)

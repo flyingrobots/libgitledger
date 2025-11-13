@@ -69,28 +69,12 @@ class GHWatcher:
         except Exception:
             pass
 
-    def _list_wave_issues_from_raw(self, wave: int) -> Set[int]:
-        out: Set[int] = set()
-        for jf in sorted(self.raw_dir.glob("issue-*.json")):
-            try:
-                data = json.loads(jf.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            num = data.get("number")
-            if not isinstance(num, int):
-                continue
-            lbls = data.get("labels") or []
-            w = None
-            for lab in lbls:
-                name = lab.get("name") if isinstance(lab, dict) else None
-                if isinstance(name, str) and name.startswith("milestone::M"):
-                    try:
-                        w = int(name.split("M", 1)[1])
-                    except Exception:
-                        pass
-            if w == wave:
-                out.add(num)
-        return out
+    def _list_wave_issues_from_gh(self, wave: int) -> Set[int]:
+        try:
+            nums = self.gh.list_issues_for_wave(wave)
+            return set(int(n) for n in nums)
+        except Exception:
+            return set()
 
     def initialize_items(self, wave: int) -> None:
         assert self.state is not None
@@ -99,7 +83,7 @@ class GHWatcher:
         f_wave = self.state.field("slaps-wave")
         f_attempt = self.state.field("slaps-attempt-count")
 
-        for issue in sorted(self._list_wave_issues_from_raw(wave)):
+        for issue in sorted(self._list_wave_issues_from_gh(wave)):
             item_id = self.gh.ensure_issue_in_project(project, issue)
             # Set initial fields: wave, attempt=0, state=blocked
             self.gh.set_item_number_field(project, item_id, f_wave, wave)
@@ -114,15 +98,22 @@ class GHWatcher:
     def _blockers_satisfied(self, wave: int, issue: int) -> bool:
         assert self.state is not None
         project = self.state.project
-        f_state = self.state.field("slaps-state")
-        # Lookup blockers from RAW
-        blockers = get_blockers_from_raw(LocalFS(), type("P", (), {"raw": self.raw_dir})(), issue)
+        # Lookup blockers from GH dependencies
+        try:
+            blockers = set(self.gh.get_blockers(issue))
+        except Exception:
+            blockers = set()
         if not blockers:
             return True
         items = {it.get("content", {}).get("number"): it for it in self.gh.list_items(project)}
         for b in blockers:
             it = items.get(b)
             if not it:
+                # If blocker not in project, fall back to label wave check
+                bwave = self.gh.get_issue_wave_by_label(b)
+                if bwave is not None and bwave < wave:
+                    continue
+                # Unknown blocker status -> treat as blocking
                 return False
             fields = {}
             for f in it.get("fields") or []:
@@ -148,7 +139,7 @@ class GHWatcher:
         f_state = self.state.field("slaps-state")
         opened = 0
         items = self.gh.list_items(prj)
-        wave_issues = self._list_wave_issues_from_raw(wave)
+        wave_issues = self._list_wave_issues_from_gh(wave)
         for it in items:
             issue = (it.get("content") or {}).get("number")
             if issue not in wave_issues:
