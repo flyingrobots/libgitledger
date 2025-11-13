@@ -9,20 +9,35 @@ from typing import Dict, List, Optional
 from .ports import GHPort, GHProject, GHField
 
 
-def _run(args: List[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(args, capture_output=True, text=True)
-
-
-def _run_ok(args: List[str]) -> str:
-    cp = _run(args)
-    if cp.returncode != 0:
-        raise RuntimeError(f"command failed: {' '.join(args)}\n{cp.stderr}")
-    return cp.stdout
+class _Runner:
+    def run(self, args: List[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(args, capture_output=True, text=True)
 
 
 class GHCLI(GHPort):
-    def __init__(self, repo: Optional[str] = None):
+    def __init__(self, repo: Optional[str] = None, runner: Optional[_Runner] = None, retries: int = 2):
         self._repo = repo  # optional override for -R
+        self._runner = runner or _Runner()
+        self._retries = retries
+
+    def _run(self, args: List[str]) -> subprocess.CompletedProcess:
+        backoffs = [0.0, 0.2, 0.5]
+        last = None
+        for i in range(self._retries + 1):
+            cp = self._runner.run(args)
+            if cp.returncode == 0:
+                return cp
+            last = cp
+            # simple jitterless backoff
+            import time as _t
+            _t.sleep(backoffs[min(i, len(backoffs) - 1)])
+        return last or subprocess.CompletedProcess(args, 1, '', 'retry failed')
+
+    def _run_ok(self, args: List[str]) -> str:
+        cp = self._run(args)
+        if cp.returncode != 0:
+            raise RuntimeError(f"command failed: {' '.join(args)}\n{cp.stderr}")
+        return cp.stdout
 
     def _gh(self, *args: str) -> List[str]:
         base = ["gh", *args]
@@ -31,29 +46,29 @@ class GHCLI(GHPort):
         return base
 
     def repo_owner(self) -> str:
-        out = _run_ok(["gh", "repo", "view", "--json", "owner", "--jq", ".owner.login"])
+        out = self._run_ok(["gh", "repo", "view", "--json", "owner", "--jq", ".owner.login"])
         return out.strip()
 
     def repo_name(self) -> str:
-        out = _run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
+        out = self._run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
         return out.strip()
 
     def ensure_project(self, title: str) -> GHProject:
         owner = self.repo_owner()
         # Try to find existing
-        out = _run_ok(["gh", "project", "list", "--owner", owner, "--format", "json"])
+        out = self._run_ok(["gh", "project", "list", "--owner", owner, "--format", "json"])
         arr = json.loads(out or "[]")
         for prj in arr:
             if prj.get("title") == title:
                 return GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
         # Create
-        out = _run_ok(["gh", "project", "create", "--owner", owner, "--title", title, "--format", "json"])
+        out = self._run_ok(["gh", "project", "create", "--owner", owner, "--title", title, "--format", "json"])
         prj = json.loads(out)
         return GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
 
     def ensure_labels(self, labels: List[str]) -> None:
         try:
-            out = _run_ok(["gh", "label", "list", "--json", "name"])
+            out = self._run_ok(["gh", "label", "list", "--json", "name"])
             have = {x["name"] for x in json.loads(out or "[]")}
         except Exception:
             have = set()
@@ -62,10 +77,10 @@ class GHCLI(GHPort):
                 continue
             # Create label with a deterministic color when possible
             color = "bfd4f2" if lab.endswith("wip") else ("c2f0c2" if lab.endswith("did-it") else "f9d0c4")
-            _run(["gh", "label", "create", lab, "--color", color])
+            self._run(["gh", "label", "create", lab, "--color", color])
 
     def ensure_fields(self, project: GHProject, single_select_state_values: List[str]) -> Dict[str, GHField]:
-        out = _run_ok(["gh", "project", "field-list", str(project.number), "--owner", project.owner, "--format", "json"])
+        out = self._run_ok(["gh", "project", "field-list", str(project.number), "--owner", project.owner, "--format", "json"])
         existing = {f["name"]: f for f in json.loads(out or "[]")}
 
         fields: Dict[str, GHField] = {}
@@ -84,7 +99,7 @@ class GHCLI(GHPort):
             ]
             if dtype == "SINGLE_SELECT" and options:
                 args += ["--single-select-options", ",".join(options)]
-            out = _run_ok(args + ["--format", "json"])
+            out = self._run_ok(args + ["--format", "json"])
             f = json.loads(out)
             opts = None
             if dtype == "SINGLE_SELECT":
@@ -95,10 +110,17 @@ class GHCLI(GHPort):
         fields["slaps-worker"] = _mk("slaps-worker", "NUMBER")
         fields["slaps-attempt-count"] = _mk("slaps-attempt-count", "NUMBER")
         fields["slaps-wave"] = _mk("slaps-wave", "NUMBER")
+        # Guard required slaps-state options
+        required = {"open", "closed", "claimed", "failure", "dead", "blocked"}
+        st = fields["slaps-state"]
+        have = set((st.options or {}).keys())
+        missing = required - have
+        if missing:
+            raise RuntimeError(f"slaps-state field missing options: {sorted(missing)}")
         return fields
 
     def issue_node_id(self, issue_number: int) -> str:
-        out = _run_ok(self._gh("issue", "view", str(issue_number), "--json", "id", "--jq", ".id"))
+        out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "id", "--jq", ".id"))
         return out.strip()
 
     def ensure_issue_in_project(self, project: GHProject, issue_number: int) -> str:
@@ -107,7 +129,7 @@ class GHCLI(GHPort):
         if item_id:
             return item_id
         content_id = self.issue_node_id(issue_number)
-        out = _run_ok(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id, "--format", "json"])
+        out = self._run_ok(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id, "--format", "json"])
         data = json.loads(out)
         return data["id"]
 
@@ -175,10 +197,10 @@ class GHCLI(GHPort):
                 """,
                 "variables": {"owner": owner, "number": number, "after": cursor}
             }
-            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 # Fallback to CLI for small projects
-                out = _run_ok(["gh", "project", "item-list", str(project.number), "--owner", project.owner, "--format", "json", "-L", "200"])
+                out = self._run_ok(["gh", "project", "item-list", str(project.number), "--owner", project.owner, "--format", "json", "-L", "200"])
                 return json.loads(out or "[]")
             data = json.loads(cp.stdout or "{}")
             pj = (data.get("user") or {}).get("projectV2") or (data.get("organization") or {}).get("projectV2") or {}
@@ -225,10 +247,10 @@ class GHCLI(GHPort):
                 """,
                 "variables": {"owner": owner, "name": name, "label": label, "after": cursor}
             }
-            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 # Fallback: try gh issue list (open only)
-                out = _run_ok(["gh", "issue", "list", "--label", label, "--json", "number"])
+                out = self._run_ok(["gh", "issue", "list", "--label", label, "--json", "number"])
                 return [x.get("number") for x in json.loads(out or "[]")]
             data = json.loads(cp.stdout or "{}")
             iss = (((data.get("repository") or {}).get("issues") or {}))
@@ -275,7 +297,7 @@ class GHCLI(GHPort):
         after = None
         while True:
             q["variables"]["after"] = after
-            cp = _run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 return []  # fallback: unknown
             data = json.loads(cp.stdout or "{}")
@@ -300,7 +322,7 @@ class GHCLI(GHPort):
         ]
         for k, v in kv.items():
             args += [f"--{k}", str(v)]
-        cp = _run(args)
+        cp = self._run(args)
         if cp.returncode != 0:
             raise RuntimeError(f"item-edit failed: {cp.stderr}")
 
@@ -341,38 +363,63 @@ class GHCLI(GHPort):
         return None
 
     def add_label(self, issue_number: int, label: str) -> None:
-        _run(self._gh("issue", "edit", str(issue_number), "--add-label", label))
+        self._run(self._gh("issue", "edit", str(issue_number), "--add-label", label))
 
     def remove_label(self, issue_number: int, label: str) -> None:
-        _run(self._gh("issue", "edit", str(issue_number), "--remove-label", label))
+        self._run(self._gh("issue", "edit", str(issue_number), "--remove-label", label))
 
     def add_comment(self, issue_number: int, body_markdown: str) -> None:
-        cp = _run(self._gh("issue", "comment", str(issue_number), "--body", body_markdown))
+        cp = self._run(self._gh("issue", "comment", str(issue_number), "--body", body_markdown))
         if cp.returncode != 0:
             # swallow errors but surface in logs
             raise RuntimeError(cp.stderr)
 
     def list_issue_comments(self, issue_number: int) -> List[dict]:
-        # Use issue view with JSON comments
-        out = _run_ok(self._gh("issue", "view", str(issue_number), "--json", "comments", "--jq", ".comments"))
-        try:
-            arr = json.loads(out)
-            # map minimal fields
-            out2: List[dict] = []
-            for c in arr or []:
-                out2.append({
-                    "createdAt": c.get("createdAt") or c.get("created_at") or "",
-                    "body": c.get("body") or "",
-                })
-            return out2
-        except Exception:
-            return []
+        # GraphQL pagination of comments to ensure we see the latest
+        owner = self.repo_owner()
+        name = self.repo_name()
+        cursor = None
+        out_arr: List[dict] = []
+        while True:
+            q = {
+                "query": """
+                query($owner:String!, $name:String!, $number:Int!, $after:String) {
+                  repository(owner:$owner, name:$name) {
+                    issue(number:$number) {
+                      comments(first:100, after:$after) {
+                        pageInfo { hasNextPage endCursor }
+                        nodes { createdAt body }
+                      }
+                    }
+                  }
+                }
+                """,
+                "variables": {"owner": owner, "name": name, "number": issue_number, "after": cursor}
+            }
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            if cp.returncode != 0:
+                # Fallback to CLI JSON
+                out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "comments", "--jq", ".comments"))
+                try:
+                    arr = json.loads(out)
+                    return [{"createdAt": (c.get("createdAt") or c.get("created_at") or ""), "body": (c.get("body") or "")} for c in arr or []]
+                except Exception:
+                    return []
+            data = json.loads(cp.stdout or "{}")
+            comm = (((data.get("repository") or {}).get("issue") or {}).get("comments") or {})
+            for n in comm.get("nodes", []):
+                out_arr.append({"createdAt": n.get("createdAt") or "", "body": n.get("body") or ""})
+            page = comm.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            cursor = page.get("endCursor")
+        return out_arr
 
     def fetch_issue_json(self, issue_number: int) -> dict:
-        out = _run_ok(self._gh("issue", "view", str(issue_number), "--json", "number,title,body,labels,url"))
+        out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "number,title,body,labels,url,state"))
         return json.loads(out or "{}")
 
     def project_item_create_draft(self, project: GHProject, title: str, body: str) -> str:
-        out = _run_ok(["gh", "project", "item-create", str(project.number), "--owner", project.owner, "--title", title, "--body", body, "--format", "json"])
+        out = self._run_ok(["gh", "project", "item-create", str(project.number), "--owner", project.owner, "--title", title, "--body", body, "--format", "json"])
         data = json.loads(out or "{}")
         return data.get("id", "")
