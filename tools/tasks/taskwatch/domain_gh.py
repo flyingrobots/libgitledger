@@ -41,6 +41,8 @@ class GHWatcher:
         self.leader_heartbeat = self.admin_dir / 'gh_watcher_leader.json'
         self.leader_ttl_sec = 15
         self.lock_ttl_sec = 1800  # default lease window for stale lock cleanup
+        self.progress_debounce_sec = 5
+        self._last_progress_post: float = 0.0
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
@@ -295,8 +297,12 @@ class GHWatcher:
                 if wave_issue_env and wave_issue_env.isdigit():
                     wave_issue_num = int(wave_issue_env)
                     tmpw = GHWorker(worker_id=new_claims[0][1], gh=self.gh, fs=self.fs, reporter=self.r, logger=self.log, locks=self.lock_dir, project=prj, fields=self.state.fields, wave=_os.environ.get('TASK_WAVE') and int(_os.environ.get('TASK_WAVE')) or None, wave_issue=wave_issue_num)
-                    md = tmpw._compose_progress_md(tmpw.wave or 0)
-                    self.gh.add_comment(wave_issue_num, md)
+                    # Debounce posting
+                    now = self._now()
+                    if self.progress_debounce_sec <= 0 or (now - self._last_progress_post) >= self.progress_debounce_sec:
+                        md = tmpw._compose_progress_md(tmpw.wave or 0)
+                        self.gh.add_comment(wave_issue_num, md)
+                        self._last_progress_post = now
             except Exception:
                 pass
 

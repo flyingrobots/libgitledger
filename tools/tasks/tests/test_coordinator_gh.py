@@ -109,6 +109,21 @@ class CoordinatorGHUnitTests(unittest.TestCase):
         coord.post_progress_comment(project, wave_issue=1001, wave=1)
         self.assertTrue(any(c[0] == 1001 and 'SLAPS Progress Update' in c[1] for c in gh.comments))
 
+    def test_progress_comment_throttle(self):
+        from tools.tasks.coordinator_gh import CoordinatorGH
+        gh = FakeGH()
+        watcher = self._watcher(gh)
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        project = watcher.state.project
+        coord = CoordinatorGH(gh)
+        coord.debounce_sec = 9999
+        coord.post_progress_comment(project, wave_issue=1002, wave=1)
+        coord.post_progress_comment(project, wave_issue=1002, wave=1)
+        # Only one comment due to throttle
+        comments = [c for c in gh.comments if c[0] == 1002]
+        self.assertEqual(1, len(comments))
+
 
 if __name__ == "__main__":
     unittest.main()

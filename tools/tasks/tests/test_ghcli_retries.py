@@ -27,8 +27,8 @@ class GHCLIRetryTests(unittest.TestCase):
         def is_repo_view(a):
             return a[:3] == ['gh', 'repo', 'view']
         plan = [
-            (is_repo_view, CompletedProcess(['gh'], 1, '', 'err1')),
-            (is_repo_view, CompletedProcess(['gh'], 1, '', 'err2')),
+            (is_repo_view, CompletedProcess(['gh'], 1, '', 'secondary rate limit')),
+            (is_repo_view, CompletedProcess(['gh'], 1, '', 'secondary rate limit')),
             (is_repo_view, CompletedProcess(['gh'], 0, 'repo\n', '')),
         ]
         gh = GHCLI(runner=FlakyRunner(plan), retries=2)
@@ -71,6 +71,43 @@ class GHCLIRetryTests(unittest.TestCase):
         gh = GHCLI(runner=FlakyRunner(plan), retries=1)
         items = gh.list_items(proj)
         self.assertEqual(42, items[0]['content']['number'])
+
+    def test_malformed_cli_json_handled(self):
+        # Comments CLI returns malformed JSON -> returns []
+        def is_repo_view(a):
+            return a[:3] == ['gh', 'repo', 'view']
+        def is_api(a):
+            return a[:3] == ['gh', 'api', 'graphql']
+        def is_issue_view(a):
+            return a[:3] == ['gh', 'issue', 'view']
+        bad_json = '{this is not json\n'
+        plan = [
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"owner":{"login":"me"}}\n', '')),
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"name":"repo"}\n', '')),
+            (is_api, CompletedProcess(['gh'], 1, '', 'api fail')),
+            (is_issue_view, CompletedProcess(['gh'], 0, bad_json, '')),
+        ]
+        gh = GHCLI(runner=FlakyRunner(plan), retries=1)
+        out = gh.list_issue_comments(123)
+        self.assertEqual([], out)
+
+    def test_get_blockers_pagination(self):
+        # Two-page GraphQL result should be aggregated
+        def is_repo_view(a):
+            return a[:3] == ['gh', 'repo', 'view']
+        def is_api(a):
+            return a[:3] == ['gh', 'api', 'graphql']
+        page1 = '{"data":{"repository":{"issue":{"blockedBy":{"pageInfo":{"hasNextPage":true,"endCursor":"CUR"},"nodes":[{"number":1},{"number":2}]}}}}}\n'
+        page2 = '{"data":{"repository":{"issue":{"blockedBy":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"number":3}]}}}}}\n'
+        plan = [
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"owner":{"login":"me"}}\n', '')),
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"name":"repo"}\n', '')),
+            (is_api, CompletedProcess(['gh'], 0, page1, '')),
+            (is_api, CompletedProcess(['gh'], 0, page2, '')),
+        ]
+        gh = GHCLI(runner=FlakyRunner(plan), retries=0)
+        out = gh.get_blockers(999)
+        self.assertEqual([1,2,3], out)
 
 
 if __name__ == '__main__':

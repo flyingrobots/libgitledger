@@ -30,7 +30,11 @@ class GHCLI(GHPort):
             last = cp
             # simple jitterless backoff
             import time as _t
-            _t.sleep(backoffs[min(i, len(backoffs) - 1)])
+            err = (cp.stderr or '').lower()
+            if 'secondary rate limit' in err:
+                _t.sleep(0.8)  # longer pause for rate limits
+            else:
+                _t.sleep(backoffs[min(i, len(backoffs) - 1)])
         return last or subprocess.CompletedProcess(args, 1, '', 'retry failed')
 
     def _run_ok(self, args: List[str]) -> str:
@@ -301,7 +305,8 @@ class GHCLI(GHPort):
             if cp.returncode != 0:
                 return []  # fallback: unknown
             data = json.loads(cp.stdout or "{}")
-            blocked = (((data.get("repository") or {}).get("issue") or {}).get("blockedBy") or {})
+            repo = (data.get("data") or {}).get("repository") or {}
+            blocked = ((repo.get("issue") or {}).get("blockedBy") or {})
             for n in blocked.get("nodes", []):
                 try:
                     nums.append(int(n.get("number")))

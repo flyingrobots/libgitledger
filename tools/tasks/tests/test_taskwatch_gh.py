@@ -208,6 +208,44 @@ class TestGHFlow(unittest.TestCase):
         items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
         self.assertEqual("open", state(55))
 
+    def test_initialize_items_idempotent(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        first = self.gh.list_items(prj)
+        watcher.initialize_items(wave=1)
+        second = self.gh.list_items(prj)
+        self.assertEqual(len(first), len(second))
+
+    def test_deps_change_runtime_unlocks(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Initially blocked: 55 blocked by 42
+        watcher.unlock_sweep(wave=1)
+        prj = watcher.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        def state(num):
+            it = items.get(num)
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertIn(state(55), ("blocked", None))
+        # Change blockers: remove 42 so 55 has none
+        self.gh.blockers[55] = []
+        watcher.unlock_sweep(wave=1)
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        self.assertEqual("open", state(55))
+
     def test_stale_lock_cleanup(self):
         reporter = type("R", (), {"report": lambda self, s: None})()
         watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
@@ -301,6 +339,7 @@ class TestGHFlow(unittest.TestCase):
         # Create another lock in same pass to verify coalescing
         lf2 = self.lock / "55.lock.txt"
         lf2.write_text('{"worker_id": 7, "started_at": 999999999999}', encoding='utf-8')
+        watcher.progress_debounce_sec = 9999
         watcher.watch_locks()
         # Verify a single coalesced comment was posted to the wave issue
         progress = [c for c in self.gh.comments if c[0] == 999 and 'SLAPS Progress Update' in c[1]]

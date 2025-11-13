@@ -8,6 +8,8 @@ from .taskwatch.ports import GHPort, GHProject
 class CoordinatorGH:
     def __init__(self, gh: GHPort):
         self.gh = gh
+        self.debounce_sec = 5
+        self._last_post_ts: float = 0.0
 
     def create_wave_status_issue(self, project: GHProject, wave: int) -> int:
         title = f"SLAPS Wave {wave}"
@@ -97,5 +99,9 @@ class CoordinatorGH:
         return md
 
     def post_progress_comment(self, project: GHProject, wave_issue: int, wave: int) -> None:
-        md = self.compose_progress_md(project, wave)
-        self.gh.add_comment(wave_issue, md)
+        import time as _t
+        now = _t.time()
+        if self.debounce_sec <= 0 or (now - self._last_post_ts) >= self.debounce_sec:
+            md = self.compose_progress_md(project, wave)
+            self.gh.add_comment(wave_issue, md)
+            self._last_post_ts = now
