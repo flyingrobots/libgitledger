@@ -50,6 +50,16 @@ class GHWatcher:
         project = self.gh.ensure_project(self.project_title)
         fields = self.gh.ensure_fields(project, STATE_VALUES)
         self.state = GHState(project, fields)
+        # Validate slaps-state options present
+        try:
+            st = fields["slaps-state"]
+            required = {"open", "closed", "claimed", "failure", "dead", "blocked"}
+            have = set((st.options or {}).keys())
+            missing = required - have
+            if missing:
+                raise RuntimeError(f"slaps-state field missing options: {sorted(missing)}")
+        except KeyError:
+            raise RuntimeError("slaps-state field not found in project fields")
         # Ensure labels
         self.gh.ensure_labels(["slaps-wip", "slaps-did-it", "slaps-failed"])
         # Ensure lock dir exists

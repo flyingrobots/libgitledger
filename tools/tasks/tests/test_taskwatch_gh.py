@@ -122,7 +122,7 @@ class FakeGH(GHPort):
         for n, body in self.comments:
             if n == issue_number:
                 idx += 1
-                out.append({"createdAt": f"2024-01-{idx:02d}T00:00:00Z", "body": body})
+                out.append({"createdAt": f"2024-01-01T00:{idx:03d}:00Z", "body": body})
         return out
 
     def fetch_issue_json(self, issue_number: int) -> dict:
@@ -135,6 +135,15 @@ class FakeGH(GHPort):
 
     def repo_name(self) -> str:
         return "repo"
+
+    def create_issue(self, title: str, body: str) -> int:
+        # create a new synthetic issue number (max existing + 1)
+        new_num = 1
+        if self.issue_id:
+            new_num = max(self.issue_id.keys()) + 1
+        self.issue_id[new_num] = f"ISSUE{new_num}"
+        # In this FakeGH we don't persist titles/bodies beyond ID allocation
+        return new_num
 
 
 class TestGHFlow(unittest.TestCase):
@@ -261,6 +270,68 @@ class TestGHFlow(unittest.TestCase):
                      locks=self.lock, project=prj, fields=fields)
         p = w._compose_prompt(42)
         self.assertEqual("new", p)
+
+    def test_latest_tasks_comment_over_100(self):
+        # 120 comments; latest should win
+        self.gh.comments = []
+        for i in range(1, 121):
+            body = f"## TASKS\n\n## Prompt\n\n```text\nplan-{i}\n```"
+            self.gh.comments.append((42, body))
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        p = w._compose_prompt(42)
+        self.assertEqual("plan-120", p)
+
+    def test_reconcile_gh_closed_sets_slaps_closed(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Force an item into non-closed state, but mark GH issue as CLOSED
+        prj = watcher.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]["id"]
+        fields = watcher.state.fields
+        self.gh.set_item_single_select(prj, id42, fields["slaps-state"], "open")
+        # Override GH fetch to CLOSED for issue 42
+        def closed_fetch(num):
+            return {"number": num, "state": "CLOSED", "labels": [{"name": "milestone::M1"}]}
+        self.gh.fetch_issue_json = closed_fetch
+        watcher.unlock_sweep(wave=1)
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        def state(num):
+            it = items[num]
+            for f in it["fields"]:
+                if (f.get("name") or f.get("field", {}).get("name")) == "slaps-state":
+                    v = f.get("value")
+                    return v.get("name") if isinstance(v, dict) else v
+            return None
+        self.assertEqual("closed", state(42))
+
+    def test_preflight_missing_slaps_state_option_raises(self):
+        # Fake GH that returns fields missing 'dead' option
+        class FakeGHMissing(FakeGH):
+            def ensure_fields(self, project, single_select_state_values):
+                f = super().ensure_fields(project, single_select_state_values)
+                # strip 'dead'
+                f["slaps-state"].options.pop("dead", None)
+                return f
+        gh2 = FakeGHMissing()
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=gh2, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        with self.assertRaises(RuntimeError):
+            watcher.preflight(wave=1)
 
     def test_failure_to_dead_after_three_attempts(self):
         reporter = type("R", (), {"report": lambda self, s: None})()

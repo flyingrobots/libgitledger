@@ -423,3 +423,8 @@ class GHCLI(GHPort):
         out = self._run_ok(["gh", "project", "item-create", str(project.number), "--owner", project.owner, "--title", title, "--body", body, "--format", "json"])
         data = json.loads(out or "{}")
         return data.get("id", "")
+
+    def create_issue(self, title: str, body: str) -> int:
+        out = self._run_ok(["gh", "issue", "create", "--title", title, "--body", body, "--json", "number"])
+        data = json.loads(out or "{}")
+        return int(data.get("number", 0))
