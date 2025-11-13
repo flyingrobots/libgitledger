@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Protocol, Tuple
+from typing import List, Protocol, Tuple, Optional, Dict
 
 
 @dataclass
@@ -42,3 +42,39 @@ class SleepPort(Protocol):
 
 class ReporterPort(Protocol):
     def report(self, text: str) -> None: ...
+
+
+# ----------------------------- GH Integration Ports -----------------------------
+
+@dataclass
+class GHProject:
+    owner: str
+    number: int
+    id: str  # GraphQL node id
+    title: str
+
+
+@dataclass
+class GHField:
+    id: str
+    name: str
+    data_type: str  # TEXT | SINGLE_SELECT | DATE | NUMBER
+    options: Dict[str, str] | None = None  # for SINGLE_SELECT: name -> option_id
+
+
+class GHPort(Protocol):
+    def ensure_project(self, title: str) -> GHProject: ...
+    def ensure_labels(self, labels: List[str]) -> None: ...
+    def ensure_fields(self, project: GHProject, single_select_state_values: List[str]) -> Dict[str, GHField]: ...
+    def repo_owner(self) -> str: ...
+    def issue_node_id(self, issue_number: int) -> str: ...
+    def ensure_issue_in_project(self, project: GHProject, issue_number: int) -> str: ...  # returns item_id
+    def list_items(self, project: GHProject) -> List[dict]: ...  # raw items JSON
+    def set_item_number_field(self, project: GHProject, item_id: str, field: GHField, value: float) -> None: ...
+    def set_item_text_field(self, project: GHProject, item_id: str, field: GHField, value: str) -> None: ...
+    def set_item_single_select(self, project: GHProject, item_id: str, field: GHField, option_value: str) -> None: ...
+    def get_item_fields(self, project: GHProject, item_id: str) -> Dict[str, str]: ...  # field name -> stringified value
+    def find_item_by_issue(self, project: GHProject, issue_number: int) -> Optional[str]: ...
+    def add_label(self, issue_number: int, label: str) -> None: ...
+    def remove_label(self, issue_number: int, label: str) -> None: ...
+    def add_comment(self, issue_number: int, body_markdown: str) -> None: ...

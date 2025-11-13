@@ -249,6 +249,17 @@ tasks-test:
 	@echo "Running Python task watcher tests..."
 	@python3 -m unittest -q tools/tasks/tests/test_taskwatch.py
 
+.PHONY: gh-tasks-test
+gh-tasks-test:
+	@echo "Running GH-backed watcher tests..."
+	@python3 -m unittest -q tools/tasks/tests/test_taskwatch_gh.py
+
+.PHONY: slaps-watch-gh
+slaps-watch-gh:
+	@echo "Starting GH-backed watcher for wave $(WAVE) (set with WAVE=1)"
+	@test -n "$(WAVE)" || (echo "Set WAVE, e.g. make slaps-watch-gh WAVE=1" >&2; exit 1)
+	@python3 tools/tasks/watch_tasks_gh.py --wave $(WAVE)
+
 .PHONY: logs-view
 logs-view:
 	@echo "Starting tmux log viewer (sane default): reuse + follow + iTerm2 attach"
