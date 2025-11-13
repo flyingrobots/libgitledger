@@ -580,7 +580,10 @@ class GHWorker:
 
     def _compose_progress_md(self, wave: int) -> str:
         # Snapshot project items for this wave
-        items = self.gh.list_items(self.project)
+        try:
+            items = self.gh.list_items(self.project)
+        except Exception:
+            items = []
         # Filter by field slaps-wave == wave
         def fval(it, name):
             for f in it.get('fields') or []:
@@ -608,7 +611,11 @@ class GHWorker:
         # Blocked details
         blocked_lines = []
         for n in blocked_issues:
-            for b in self.gh.get_blockers(n) or []:
+            try:
+                bs = self.gh.get_blockers(n) or []
+            except Exception:
+                bs = []
+            for b in bs:
                 blocked_lines.append(f"- (#{n})-[blocked by]->(#{b})")
         wave_status = 'pending'
         if dead_issues:

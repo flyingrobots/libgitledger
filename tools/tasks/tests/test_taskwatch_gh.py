@@ -14,6 +14,7 @@ class FakeGH(GHPort):
         self._owner = "me"
         self.projects = {}
         self.labels = set()
+        self.issue_labels = {}
         self.items = {}  # project_id -> list of {id, content:{number}, fields:[{name,value}]}
         self.issue_id = {}  # number -> node id
         self.comments = []
@@ -108,6 +109,7 @@ class FakeGH(GHPort):
 
     def add_label(self, issue_number: int, label: str):
         self.labels.add(label)
+        self.issue_labels.setdefault(issue_number, set()).add(label)
 
     def remove_label(self, issue_number: int, label: str):
         pass
@@ -508,6 +510,72 @@ class TestGHFlow(unittest.TestCase):
         watcher.unlock_sweep(wave=1)
         f = gh.get_item_fields(prj, id55)
         self.assertEqual('failure', f.get('slaps-state'))
+
+    def test_worker_success_sets_closed_and_label_and_removes_lock(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'open')
+        class OkLLM:
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                return 0, 'ok', ''
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        # create lock then work
+        w._atomic_lock_create(42)
+        w.work_issue(42, OkLLM())
+        f = self.gh.get_item_fields(prj, id42)
+        self.assertEqual('closed', f.get('slaps-state'))
+        self.assertIn('slaps-did-it', self.gh.issue_labels.get(42, set()))
+        self.assertFalse((self.lock / '42.lock.txt').exists())
+
+    def test_worker_dead_on_third_failure_sets_dead_label(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id42 = items[42]['id']
+        self.gh.set_item_number_field(prj, id42, fields['slaps-attempt-count'], 3)
+        self.gh.set_item_single_select(prj, id42, fields['slaps-state'], 'open')
+        class FailLLM:
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                return 2, '', 'bad'
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        w._atomic_lock_create(42)
+        w.work_issue(42, FailLLM())
+        f = self.gh.get_item_fields(prj, id42)
+        self.assertEqual('dead', f.get('slaps-state'))
+        self.assertIn('slaps-failed', self.gh.issue_labels.get(42, set()))
+        self.assertFalse((self.lock / '42.lock.txt').exists())
+
+    def test_watch_locks_invalid_payload_skips(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        # Invalid lock content
+        (self.lock / '42.lock.txt').write_text('not-json-or-int', encoding='utf-8')
+        # Should not raise and should not claim
+        watcher.watch_locks()
+        prj = watcher.state.project
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        f = self.gh.get_item_fields(prj, items[42]['id'])
+        self.assertNotEqual('claimed', f.get('slaps-state'))
 
     def test_worker_claim_timeout_releases_lock(self):
         reporter = type("R", (), {"report": lambda self, s: None})()

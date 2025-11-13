@@ -72,6 +72,25 @@ class GHCLIRetryTests(unittest.TestCase):
         items = gh.list_items(proj)
         self.assertEqual(42, items[0]['content']['number'])
 
+    def test_list_issues_for_wave_cli_fallback(self):
+        # GraphQL fails; gh issue list returns open issues numbers
+        def is_api(a):
+            return a[:3] == ['gh', 'api', 'graphql']
+        def is_issue_list(a):
+            return a[:3] == ['gh', 'issue', 'list']
+        def is_repo_view(a):
+            return a[:3] == ['gh', 'repo', 'view']
+        issues_json = '[{"number": 7}, {"number": 8}]\n'
+        plan = [
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"owner":{"login":"me"}}\n', '')),
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"name":"repo"}\n', '')),
+            (is_api, CompletedProcess(['gh'], 1, '', 'graphql down')),
+            (is_issue_list, CompletedProcess(['gh'], 0, issues_json, '')),
+        ]
+        gh = GHCLI(runner=FlakyRunner(plan), retries=0)
+        out = gh.list_issues_for_wave(1)
+        self.assertEqual([7,8], out)
+
     def test_malformed_cli_json_handled(self):
         # Comments CLI returns malformed JSON -> returns []
         def is_repo_view(a):
