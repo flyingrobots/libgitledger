@@ -33,7 +33,7 @@ class FilePort(Protocol):
 
 
 class LLMPort(Protocol):
-    def exec(self, prompt: str) -> Tuple[int, str, str]: ...  # rc, stdout, stderr
+    def exec(self, prompt: str, timeout: float | None = None) -> Tuple[int, str, str]: ...  # rc, stdout, stderr
 
 
 class SleepPort(Protocol):
@@ -42,4 +42,3 @@ class SleepPort(Protocol):
 
 class ReporterPort(Protocol):
     def report(self, text: str) -> None: ...
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+import time
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -153,6 +154,9 @@ class Worker:
         self.p = paths
         self.reporter = reporter
         self.current_issue: Optional[int] = None
+        self.started_at: Optional[float] = None
+        self.estimate_sec: Optional[int] = None
+        self.timeout_sec: Optional[int] = None
         # ensure claimed dir exists
         self.fs.mkdirs(self.p.claimed / str(self.worker_id))
 
@@ -182,7 +186,9 @@ class Worker:
             dest = claimed_files[0]
             self.current_issue = extract_issue_number(dest)
             prompt = self.fs.read_text(dest)
-            rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
+            self.started_at = time.time()
+            self._ensure_estimate_for(dest, prompt)
+            rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
             if rc != 0:
                 footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
                 try:
@@ -201,6 +207,9 @@ class Worker:
                     self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
                     self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
             self.current_issue = None
+            self.started_at = None
+            self.estimate_sec = None
+            self.timeout_sec = None
             return True
 
         # Otherwise, try to claim exactly one task from open.
@@ -211,7 +220,9 @@ class Worker:
                 if self.reporter:
                     self.reporter.report(f"[SYSTEM] Moved task #{self.current_issue} to claimed")
                 prompt = self.fs.read_text(dest)
-                rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt)
+                self.started_at = time.time()
+                self._ensure_estimate_for(dest, prompt)
+                rc, out, err = self.llm.exec(POLICY_GUARDRAILS + prompt, timeout=self.timeout_sec or None)
                 if rc != 0:
                     footer = ("\n\n## FAILURE:\n\n" f"STDOUT: {out}\n" f"STDERR: {err}\n")
                     try:
@@ -230,8 +241,53 @@ class Worker:
                         self.reporter.report(f"[WORKER:{self.worker_id:03d}] LLM success task #{num}")
                         self.reporter.report(f"[SYSTEM] Moved task #{num} to closed")
                 self.current_issue = None
+                self.started_at = None
+                self.estimate_sec = None
+                self.timeout_sec = None
                 return True
         return False
+
+    def _ensure_estimate_for(self, task_path: Path, prompt: str) -> None:
+        if self.estimate_sec is not None and self.timeout_sec is not None:
+            return
+        issue = extract_issue_number(task_path) or 0
+        est_dir = self.p.admin / "estimates"
+        self.fs.mkdirs(est_dir)
+        est_file = est_dir / f"{issue}.json"
+        # Try cached
+        if self.fs.exists(est_file):
+            try:
+                data = json.loads(self.fs.read_text(est_file))
+                self.estimate_sec = int(data.get("estimate_sec", 0)) or None
+                self.timeout_sec = int(data.get("timeout_sec", 0)) or None
+                if self.reporter and self.estimate_sec and self.timeout_sec:
+                    self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {int(self.estimate_sec/60)}m; Timeout: {int(self.timeout_sec/60)}m")
+                return
+            except Exception:
+                pass
+        # Ask LLM for a fast estimate (minutes), best-effort
+        est_prompt = (
+            POLICY_GUARDRAILS
+            + "Estimate how long the following task will take in minutes. Output only a single integer (minutes). Task prompt follows:\n\n"
+            + prompt
+        )
+        rc, out, _ = self.llm.exec(est_prompt, timeout=60)
+        minutes = None
+        if rc == 0:
+            try:
+                minutes = int("".join(ch for ch in out if ch.isdigit()) or "0")
+            except Exception:
+                minutes = None
+        if not minutes or minutes <= 0:
+            minutes = 20
+        self.estimate_sec = int(minutes * 60)
+        self.timeout_sec = max(600, min(self.estimate_sec * 2, 7200))
+        if self.reporter:
+            self.reporter.report(f"[SYSTEM] Estimated time for task #{issue}: {minutes}m; Timeout: {int(self.timeout_sec/60)}m")
+        try:
+            self.fs.write_text(est_file, json.dumps({"estimate_sec": self.estimate_sec, "timeout_sec": self.timeout_sec}))
+        except Exception:
+            pass
 
 
 class Watcher:
@@ -249,7 +305,28 @@ class Watcher:
         lines: List[str] = []
         for w in workers:
             status = "busy" if w.current_issue is not None else "idle"
-            extra = f" working on {w.current_issue}" if w.current_issue else ""
+            extra = ""
+            if w.current_issue:
+                extra = f" working on {w.current_issue}"
+                if getattr(w, "started_at", None):
+                    now = time.time()
+                    elapsed = int(now - (w.started_at or now))
+                    est = getattr(w, "estimate_sec", None)
+                    to_sec = getattr(w, "timeout_sec", None)
+                    rem = None
+                    if to_sec:
+                        rem = max(0, int(to_sec - elapsed))
+                    def fmt(s: Optional[int]) -> str:
+                        if s is None:
+                            return "?"
+                        m, s2 = divmod(int(s), 60)
+                        return f"{m}m{s2:02d}s"
+                    extra += f" [elapsed {fmt(elapsed)}"
+                    if est:
+                        extra += f" / est {fmt(est)}"
+                    if rem is not None:
+                        extra += f" / timeout in {fmt(rem)}"
+                    extra += "]"
             lines.append(f"worker {w.worker_id} is {status}{extra}")
         failures = len(self.fs.list_files(self.p.failed))
         completed = len(self.fs.list_files(self.p.closed))
@@ -399,6 +476,12 @@ class Watcher:
                 "Keep the rest of the prompt self-contained and compliant with repo rules and guardrails."
             ).format(issue=issue, filepath=str(file), attempt=attempts, next_attempt=next_attempt)
         )
+        # Log retry with truncated prompt
+        try:
+            trunc = remediation.replace("\n", " ")[:50]
+            self.reporter.report(f"[SYSTEM] Retry #{issue} with prompt: {trunc}")
+        except Exception:
+            pass
         # Log retry with truncated prompt
         try:
             trunc = remediation.replace("\n", " ")[:50]

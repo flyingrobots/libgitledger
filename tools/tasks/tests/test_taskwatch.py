@@ -20,7 +20,7 @@ class FakeLLM(LLMPort):
         self.rc = rc
         self.capture = capture if capture is not None else []
 
-    def exec(self, prompt: str):
+    def exec(self, prompt: str, timeout: float | None = None):
         # capture the prompt for assertions
         self.capture.append(prompt)
         if self.rc == 0:
@@ -34,7 +34,7 @@ class FakeLLMWriter(LLMPort):
         self.paths = paths
         self.capture: list[str] = []
 
-    def exec(self, prompt: str):
+    def exec(self, prompt: str, timeout: float | None = None):
         self.capture.append(prompt)
         # Try to extract the issue number from the prompt by looking for '/open/{issue}.txt'
         import re

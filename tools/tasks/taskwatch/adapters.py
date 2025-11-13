@@ -45,10 +45,12 @@ class LocalFS(FilePort):
 
 
 class CodexLLM(LLMPort):
-    def exec(self, prompt: str) -> Tuple[int, str, str]:
+    def exec(self, prompt: str, timeout: float | None = None) -> Tuple[int, str, str]:
         try:
-            proc = subprocess.run(["codex", "exec", prompt], capture_output=True, text=True)
+            proc = subprocess.run(["codex", "exec", prompt], capture_output=True, text=True, timeout=timeout)
             return proc.returncode, proc.stdout, proc.stderr
+        except subprocess.TimeoutExpired:
+            return 124, "", f"timeout after {timeout} seconds" if timeout else "timeout"
         except FileNotFoundError as e:
             return 127, "", f"codex not found: {e}"
         except Exception as e:
@@ -65,4 +67,3 @@ class RealSleeper(SleepPort):
         import time
 
         time.sleep(seconds)
-
