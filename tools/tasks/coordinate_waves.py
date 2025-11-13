@@ -65,7 +65,14 @@ def run_guardian(jsonl: JsonlLogger) -> int:
         return rc
     except FileNotFoundError:
         jsonl.emit('guardian_finish', rc=127, error='codex not found')
-        return 127
+    return 127
+
+
+def run_followups(wave: int, jsonl: JsonlLogger) -> int:
+    jsonl.emit('followups_start', wave=wave)
+    rc = subprocess.call([sys.executable, 'tools/tasks/process_followups.py', '--wave', str(wave)])
+    jsonl.emit('followups_finish', wave=wave, rc=rc)
+    return rc
 
 
 def main() -> int:
@@ -92,6 +99,17 @@ def main() -> int:
             print(f"[COORD] Watcher returned {rc}; aborting", file=sys.stderr)
             return 1
 
+        # Process follow-ups and run a follow-up watcher pass if any were enqueued
+        frc = run_followups(wave, jsonl)
+        if frc == 0:
+            # A follow-up prompt may have been enqueued; run a quick pass
+            print(f"[COORD] Running follow-up watcher pass for wave {wave}")
+            rc = run_watcher(wave)
+            jsonl.emit('watcher_followup_finish', wave=wave, rc=rc)
+            if rc != 0:
+                print(f"[COORD] Follow-up watcher returned {rc}; aborting", file=sys.stderr)
+                return 1
+
         dead_count = count_dead(base, wave)
         jsonl.emit('dead_count', wave=wave, count=dead_count)
         if dead_count > 1:
@@ -112,4 +130,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
