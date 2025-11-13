@@ -52,6 +52,23 @@ class GHWatcher:
         self.r.report(f"[SYSTEM] GH project ready: {project.title} (#{project.number})")
         self._emit("gh_preflight", project=project.title, number=project.number)
 
+    def ensure_cached_issue(self, issue: int, evict: bool = False) -> None:
+        raw_file = self.raw_dir / f"issue-{issue}.json"
+        if evict and raw_file.exists():
+            try:
+                raw_file.unlink()
+            except Exception:
+                pass
+        if raw_file.exists():
+            return
+        try:
+            data = self.gh.fetch_issue_json(issue)
+            # Write as a minimal cache; relationships may already exist from prior import
+            raw_file.parent.mkdir(parents=True, exist_ok=True)
+            raw_file.write_text(json.dumps(data), encoding='utf-8')
+        except Exception:
+            pass
+
     def _list_wave_issues_from_raw(self, wave: int) -> Set[int]:
         out: Set[int] = set()
         for jf in sorted(self.raw_dir.glob("issue-*.json")):

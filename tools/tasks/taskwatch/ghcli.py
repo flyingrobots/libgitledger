@@ -34,6 +34,10 @@ class GHCLI(GHPort):
         out = _run_ok(["gh", "repo", "view", "--json", "owner", "--jq", ".owner.login"])
         return out.strip()
 
+    def repo_name(self) -> str:
+        out = _run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
+        return out.strip()
+
     def ensure_project(self, title: str) -> GHProject:
         owner = self.repo_owner()
         # Try to find existing
@@ -188,3 +192,12 @@ class GHCLI(GHPort):
             return out2
         except Exception:
             return []
+
+    def fetch_issue_json(self, issue_number: int) -> dict:
+        out = _run_ok(self._gh("issue", "view", str(issue_number), "--json", "number,title,body,labels,url"))
+        return json.loads(out or "{}")
+
+    def project_item_create_draft(self, project: GHProject, title: str, body: str) -> str:
+        out = _run_ok(["gh", "project", "item-create", str(project.number), "--owner", project.owner, "--title", title, "--body", body, "--format", "json"])
+        data = json.loads(out or "{}")
+        return data.get("id", "")

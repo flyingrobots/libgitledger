@@ -29,13 +29,21 @@ def main() -> int:
     args = ap.parse_args()
 
     wave = args.wave
-    proj_title = args.project or f"SLAPS Run {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    gh = GHCLI()
+    # Default project name: SLAPS-{repo}
+    if args.project:
+        proj_title = args.project
+    else:
+        try:
+            repo_name = gh.repo_name()
+        except Exception:
+            repo_name = "repo"
+        proj_title = f"SLAPS-{repo_name}"
 
     base = Path('.slaps/tasks')
     fs = LocalFS()
     reporter = StdoutReporter()
     jsonl = JsonlLogger(path=base.parent / 'logs' / 'events.jsonl')
-    gh = GHCLI()
     watcher = GHWatcher(gh=gh, fs=fs, reporter=reporter, logger=jsonl,
                         raw_dir=base / 'raw', lock_dir=base / 'lock', project_title=proj_title)
 
@@ -124,4 +132,3 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
