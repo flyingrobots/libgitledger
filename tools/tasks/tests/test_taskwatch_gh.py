@@ -104,6 +104,14 @@ class FakeGH(GHPort):
     def add_comment(self, issue_number: int, body_markdown: str):
         self.comments.append((issue_number, body_markdown))
 
+    def list_issue_comments(self, issue_number: int):
+        # Return comments as list of dicts in insertion order
+        out = []
+        for n, body in self.comments:
+            if n == issue_number:
+                out.append({"createdAt": "2024-01-01T00:00:00Z", "body": body})
+        return out
+
 
 class TestGHFlow(unittest.TestCase):
     def setUp(self):
@@ -173,13 +181,19 @@ class TestGHFlow(unittest.TestCase):
         watcher.initialize_items(wave=1)
         prj = watcher.state.project
         fields = watcher.state.fields
-        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        # Prepare issue 42 as failure with attempt=3 (about to dead-letter)
         id42 = self.gh.find_item_by_issue(prj, 42)
-        # Simulate attempts already at 3 and last run failed
         self.gh.set_item_number_field(prj, id42, fields["slaps-attempt-count"], 3)
         self.gh.set_item_single_select(prj, id42, fields["slaps-state"], "failure")
-        # Sweep should mark dead (next_attempt>3)
-        watcher.unlock_sweep(wave=1)
+        # Worker fails again -> should mark dead immediately
+        class FailLLM:
+            def exec(self, prompt, timeout=None, out_path=None, err_path=None):
+                return 2, "", "boom"
+        worker = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=type("R", (), {"report": lambda s, t: None})(), logger=None,
+                          locks=self.lock, project=prj, fields=fields)
+        # Simulate a claim lock (worker workflow)
+        worker._atomic_lock_create(42)
+        worker.work_issue(42, FailLLM())
         it = next(i for i in self.gh.list_items(prj) if i["content"]["number"] == 42)
         def st():
             for f in it["fields"]:

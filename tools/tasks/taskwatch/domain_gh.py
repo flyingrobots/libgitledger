@@ -144,19 +144,14 @@ class GHWatcher:
             st = self._get_field_value(fields, "slaps-state")
             if st in ("blocked", "failure"):
                 if self._blockers_satisfied(wave, issue):
-                    # Increment attempt count; if >3, mark dead
+                    # Only open if attempt count < 3. Dead-letter is handled at worker time.
                     f_attempt = self.state.field("slaps-attempt-count")
                     try:
                         cur = int(self._get_field_value(fields, "slaps-attempt-count") or "0")
                     except Exception:
                         cur = 0
-                    next_attempt = cur + 1
-                    if next_attempt > 3:
-                        self.gh.set_item_single_select(prj, it["id"], f_state, "dead")
-                        self.gh.add_label(issue, "slaps-failed")
-                        self._emit("mark_dead", issue=issue)
-                    else:
-                        self.gh.set_item_number_field(prj, it["id"], f_attempt, next_attempt)
+                    if cur < 3:
+                        self.gh.set_item_number_field(prj, it["id"], f_attempt, cur + 1)
                         self.gh.set_item_single_select(prj, it["id"], f_state, "open")
                         opened += 1
                         self._emit("unlock_open", issue=issue)
@@ -280,6 +275,30 @@ class GHWorker:
             out.append(lines[j])
         return "\n".join(out).strip()
 
+    def _latest_tasks_comment(self, issue: int) -> Optional[str]:
+        try:
+            comments = self.gh.list_issue_comments(issue)
+        except Exception:
+            comments = []
+        latest = None
+        latest_ts = None
+        for c in comments:
+            body = c.get("body") or ""
+            if body.strip().startswith("## TASKS"):
+                ts = c.get("createdAt") or ""
+                if latest is None or ts > (latest_ts or ""):
+                    latest = body
+                    latest_ts = ts
+        return latest
+
+    def _extract_prompt_block(self, text: str) -> Optional[str]:
+        # Try to extract a ```text``` fenced block under a heading "Prompt"
+        import re
+        m = re.search(r"```(?:text)?\n([\s\S]*?)\n```", text)
+        if m:
+            return m.group(1).strip()
+        return None
+
     def _compose_prompt(self, issue: int) -> str:
         raw = Path('.slaps/tasks/raw') / f"issue-{issue}.json"
         title = f"Issue #{issue}"
@@ -292,6 +311,11 @@ class GHWorker:
             except Exception:
                 pass
         ac = self._extract_ac(body) or "## Acceptance Criteria\n- Execute the task as described."
+        plan = self._latest_tasks_comment(issue)
+        plan_prompt = self._extract_prompt_block(plan) if plan else None
+        if plan_prompt:
+            return plan_prompt
+        # Fall back to constructing a prompt from issue body + AC if no plan found
         return (
             "You are an autonomous repo assistant. Follow all repository rules.\n\n"
             f"Task: {title}\n\n"
@@ -371,9 +395,46 @@ class GHWorker:
             self._emit("success", issue=issue)
             return True
         else:
+            # Read current attempt count to decide dead vs remediation
+            fields_now = self.gh.get_item_fields(self.project, item_id)
+            try:
+                cur_attempt = int(fields_now.get("slaps-attempt-count") or "1")
+            except Exception:
+                cur_attempt = 1
+            if cur_attempt >= 3:
+                # Dead letter immediately
+                self.gh.set_item_single_select(self.project, item_id, f_state, "dead")
+                self.gh.add_label(issue, "slaps-failed")
+                self._comment_failure(issue, out, err, state="dead")
+                self._remove_lock(issue)
+                self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}; marked dead")
+                self._emit("dead", issue=issue, rc=rc)
+                return True
+            # mark failure, post details, then generate remediation plan and reopen with attempt+1
             self.gh.set_item_single_select(self.project, item_id, f_state, "failure")
             self._comment_failure(issue, out, err, state="failure")
+            # Build remediation plan (## TASKS New Approach) with a new prompt block
+            rem_prompt = (
+                "You are a senior engineer triaging a failed automated attempt.\n"
+                "Read the following artifacts and write a concise remediation plan as a Markdown comment that starts with the heading '## TASKS New Approach'.\n"
+                "Include a table with: What Went Wrong, New Plan, Why This Should Work, Confidence Index (0-1).\n"
+                "Then include a 'Prompt' section with a fenced ```text block containing the exact prompt the next worker should run.\n\n"
+                f"Issue #{issue} prior prompt:\n\n```text\n{prompt}\n```\n\n"
+                f"LLM STDOUT (truncated):\n\n```text\n{out[:4000]}\n```\n\n"
+                f"LLM STDERR (truncated):\n\n```text\n{err[:4000]}\n```\n\n"
+                "Important constraints:\n- DO NOT perform git operations.\n- Plan must be specific and executable in this repository.\n- Keep the prompt self-contained.\n"
+            )
+            rc2, plan_md, _ = llm.exec(rem_prompt, timeout=120)
+            if rc2 == 0 and plan_md.strip():
+                try:
+                    self.gh.add_comment(issue, plan_md)
+                except Exception:
+                    pass
+            # Reopen for next attempt and increment attempt count now
+            f_attempt = self.fields["slaps-attempt-count"]
+            self.gh.set_item_number_field(self.project, item_id, f_attempt, cur_attempt + 1)
+            self.gh.set_item_single_select(self.project, item_id, f_state, "open")
             self._remove_lock(issue)
-            self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}")
-            self._emit("failure", issue=issue, rc=rc)
+            self.r.report(f"[WORKER:{self.worker_id:03d}] LLM error task #{issue}: exit code {rc}; posted remediation and reopened")
+            self._emit("failure_reopen", issue=issue, rc=rc, next_attempt=cur_attempt + 1)
             return True

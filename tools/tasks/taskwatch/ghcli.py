@@ -173,3 +173,18 @@ class GHCLI(GHPort):
             # swallow errors but surface in logs
             raise RuntimeError(cp.stderr)
 
+    def list_issue_comments(self, issue_number: int) -> List[dict]:
+        # Use issue view with JSON comments
+        out = _run_ok(self._gh("issue", "view", str(issue_number), "--json", "comments", "--jq", ".comments"))
+        try:
+            arr = json.loads(out)
+            # map minimal fields
+            out2: List[dict] = []
+            for c in arr or []:
+                out2.append({
+                    "createdAt": c.get("createdAt") or c.get("created_at") or "",
+                    "body": c.get("body") or "",
+                })
+            return out2
+        except Exception:
+            return []
