@@ -52,6 +52,8 @@ def run() -> int:
     signal.signal(signal.SIGTERM, _sigint)
 
     reporter.report("watcher started; monitoring .slaps/tasks/")
+    # Perform a cold-start sweep to unlock any tasks based on existing closed files/markers.
+    watcher.startup_sweep(workers)
     while True:
         # detect closed
         closed_now = {p.name for p in fs.list_files(paths.closed)}

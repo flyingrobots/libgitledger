@@ -263,6 +263,104 @@ class TaskwatchTests(unittest.TestCase):
 
         self.assertEqual([self.paths.open / "22.txt"], self.fs.list_files(self.paths.open))
 
+    def test_startup_sweep_uses_closed_markers_and_files(self):
+        # Setup: 91 blocks 92; 92 blockedBy [91]
+        self.fs.write_text(self.paths.edges_csv, "91,92\n")
+        self.fs.write_text(self.paths.raw / "issue-92.json", json.dumps({"relationships": {"blockedBy": [91]}}))
+        self.fs.write_text(self.paths.blocked / "92.txt", "prompt 92")
+        # Create only marker, no closed file
+        self.fs.write_text(self.paths.admin_closed / "91.closed", "1")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        # Cold-start sweep should unlock 92
+        w.startup_sweep(workers=[])
+        self.assertEqual([self.paths.open / "92.txt"], self.fs.list_files(self.paths.open))
+
+        # Now simulate a second dependent 93 blocked by 91 as well; blocked prompt present
+        self.fs.append_text(self.paths.edges_csv, "91,93\n")
+        self.fs.write_text(self.paths.raw / "issue-93.json", json.dumps({"relationships": {"blockedBy": [91]}}))
+        self.fs.write_text(self.paths.blocked / "93.txt", "prompt 93")
+        # Also create a closed file for 91 and sweep again (should unlock 93)
+        self.fs.write_text(self.paths.closed / "91.txt", "done")
+        w.startup_sweep(workers=[])
+        opens = sorted(self.fs.list_files(self.paths.open))
+        self.assertIn(self.paths.open / "93.txt", opens)
+
+    def test_edges_respects_comments_and_whitespace(self):
+        content = """
+        # comment line
+        \t  101 ,   102  \n
+        101,102
+        """
+        self.fs.write_text(self.paths.edges_csv, content)
+        self.fs.write_text(self.paths.raw / "issue-102.json", json.dumps({"relationships": {"blockedBy": [101]}}))
+        self.fs.write_text(self.paths.blocked / "102.txt", "prompt 102")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "101.txt"
+        self.fs.write_text(c, "done 101")
+        w.handle_closed(c, workers=[])
+        self.assertEqual([self.paths.open / "102.txt"], self.fs.list_files(self.paths.open))
+
+    def test_worker_claims_lexicographic_order(self):
+        self.fs.write_text(self.paths.open / "100.txt", "x")
+        self.fs.write_text(self.paths.open / "2.txt", "x")
+        self.fs.write_text(self.paths.open / "10.txt", "x")
+        w = Worker(worker_id=1, fs=self.fs, llm=FakeLLM(rc=0), paths=self.paths)
+        # First claim should pick 10.txt (lexicographic: 10 < 100 < 2)
+        self.assertTrue(w.run_once())
+        closed_names = [p.name for p in self.fs.list_files(self.paths.closed)]
+        self.assertEqual(["10.txt"], closed_names)
+        # Second claim picks 100.txt
+        self.assertTrue(w.run_once())
+        closed_names = sorted([p.name for p in self.fs.list_files(self.paths.closed)])
+        self.assertIn("100.txt", closed_names)
+
+    def test_move_atomic_failure_on_claim_does_not_crash(self):
+        class FailClaimFS(LocalFS):
+            def move_atomic(self, src: Path, dst: Path) -> bool:
+                # Fail only when moving into claimed dir
+                if "claimed" in str(dst):
+                    return False
+                return super().move_atomic(src, dst)
+
+        fs = FailClaimFS()
+        paths = default_paths(self.root)
+        ensure_dirs(fs, paths)
+        fs.write_text(paths.open / "201.txt", "task")
+        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths)
+        self.assertFalse(w.run_once())  # no claim -> returns False
+        # File remains in open/
+        self.assertEqual([paths.open / "201.txt"], fs.list_files(paths.open))
+
+    def test_move_atomic_failure_on_route_does_not_crash(self):
+        class FailRouteFS(LocalFS):
+            def move_atomic(self, src: Path, dst: Path) -> bool:
+                # Allow claim from open->claimed, but fail claimed->closed/failed
+                if "claimed" in str(src) and ("closed" in str(dst) or "failed" in str(dst)):
+                    return False
+                return super().move_atomic(src, dst)
+
+        fs = FailRouteFS()
+        paths = default_paths(self.root)
+        ensure_dirs(fs, paths)
+        fs.write_text(paths.open / "202.txt", "task")
+        w = Worker(worker_id=1, fs=fs, llm=FakeLLM(rc=0), paths=paths)
+        self.assertTrue(w.run_once())  # claimed and executed
+        # File should still exist in claimed since routing failed
+        claimed_dir = paths.claimed / "1"
+        remaining = fs.list_files(claimed_dir)
+        self.assertEqual([claimed_dir / "202.txt"], remaining)
+
+    def test_case_insensitive_blockedby_key(self):
+        self.fs.write_text(self.paths.edges_csv, "301,302\n")
+        # use lowercase 'blockedby'
+        self.fs.write_text(self.paths.raw / "issue-302.json", json.dumps({"relationships": {"blockedby": [301]}}))
+        self.fs.write_text(self.paths.blocked / "302.txt", "prompt 302")
+        w = Watcher(fs=self.fs, llm=FakeLLM(), reporter=CaptureReporter(), paths=self.paths)
+        c = self.paths.closed / "301.txt"
+        self.fs.write_text(c, "done 301")
+        w.handle_closed(c, workers=[])
+        self.assertEqual([self.paths.open / "302.txt"], self.fs.list_files(self.paths.open))
+
     def test_malformed_edges_prevents_unlock_and_does_not_crash(self):
         # Malformed edges: header unrelated and non-integer values
         self.fs.write_text(self.paths.edges_csv, "alpha,beta\nfoo,bar\n")

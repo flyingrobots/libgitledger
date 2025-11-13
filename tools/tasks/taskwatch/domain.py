@@ -222,11 +222,7 @@ class Watcher:
         except Exception:
             pass
 
-    def handle_closed(self, file: Path, workers: List[Worker]) -> None:
-        issue = extract_issue_number(file)
-        if issue is None:
-            return
-        self._write_closed_marker(issue)
+    def _unlock_downstream(self, issue: int) -> None:
         self.edges = load_edges_map(self.fs, self.p.edges_csv)
         downstream = sorted(self.edges.get(issue, set()))
         for dep in downstream:
@@ -235,7 +231,33 @@ class Watcher:
                 blocked_prompt = self.p.blocked / f"{dep}.txt"
                 if self.fs.exists(blocked_prompt):
                     self.fs.move_atomic(blocked_prompt, self.p.open / blocked_prompt.name)
+
+    def handle_closed(self, file: Path, workers: List[Worker]) -> None:
+        issue = extract_issue_number(file)
+        if issue is None:
+            return
+        self._write_closed_marker(issue)
+        self._unlock_downstream(issue)
         self.print_report(workers)
+
+    def startup_sweep(self, workers: List[Worker]) -> None:
+        """On startup, unlock any now-unblocked tasks based on existing closed files or markers."""
+        # Collect issues from closed files and admin markers
+        issues: set[int] = set()
+        for f in self.fs.list_files(self.p.closed):
+            num = extract_issue_number(f)
+            if num is not None:
+                issues.add(num)
+        for m in self.fs.list_files(self.p.admin_closed):
+            num = extract_issue_number(m)
+            if num is not None:
+                issues.add(num)
+        for num in sorted(issues):
+            # Ensure marker exists then unlock
+            self._write_closed_marker(num)
+            self._unlock_downstream(num)
+        if issues:
+            self.print_report(workers)
 
     def _attempt_path(self, issue: int) -> Path:
         return self.p.attempts / f"{issue}.count"
