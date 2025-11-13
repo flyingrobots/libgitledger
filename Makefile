@@ -1,6 +1,6 @@
 .PHONY: all test cmake meson both test-cmake test-meson test-both clean format format-check tidy lint tidy-build \
         host-cmake host-meson host-both host-test-cmake host-test-meson host-test-both \
-        host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
+		host-format-check host-tidy host-lint sanitizers host-sanitizers analyze host-analyze \
 	activity-validate log hooks-install hooks-uninstall trophy symbols-check \
 	roadmap-render roadmap-sweep roadmap-validate roadmap-refresh
 
@@ -199,6 +199,18 @@ hooks-uninstall:
 	@git config --unset core.hooksPath || true
 	@echo "hooks: unset core.hooksPath"
 
+# -----------------------------------------------------------------------------
+# Docs: containerized target to build Doxygen API documentation (Issue #51)
+# -----------------------------------------------------------------------------
+.PHONY: docs host-docs
+docs:
+	@$(DISPATCH) docs
+
+host-docs:
+	$(HOST_GUARD)
+	$(MAKE) host-cmake
+	cmake --build build-release --target doxygen
+
 # Initialize submodules for fresh clones
 bootstrap:
 	@git submodule update --init --recursive
@@ -236,3 +248,9 @@ roadmap-refresh:
 tasks-test:
 	@echo "Running Python task watcher tests..."
 	@python3 -m unittest -q tools/tasks/tests/test_taskwatch.py
+
+.PHONY: logs-view
+logs-view:
+	@echo "Starting tmux log viewer (session: slaps-logs)"
+	@python3 tools/tasks/log_viewer.py
+	@tmux attach -t slaps-logs
