@@ -50,13 +50,19 @@ def count_dead(base: Path, wave: int) -> int:
 
 def run_guardian(jsonl: JsonlLogger) -> int:
     prompt = (
-        "Please read through the git repo and gain an understanding of the project. You are assigned the role of Lead QUALITY GUARDIAN - you're picking up after a swarm of LLMs just chewed through a bunch of tasks. They were all working together on top of each other in pure chaos. The dust has settled, but that's when you come in. Please git commit to the current branch (try to write a helpful commit message). Then:\n\n"
-        "1. Using git, examine what you just committed. Note the source files that changed.\n"
-        "2. Examine the tests: ensure that the tests that were written were comprehensive and cover the code that was committed. If you find gaps, cover them with new tests.\n"
-        "3. Run the tests.\n"
-        "4. If they pass, git commit, indicate success and exit 0.\n"
-        "5. Else for each failure: indicate test case failed via output, then iterate on the affected code. After fixing the code, go to 3.\n\n"
-        "ALL OUTPUT SHOULD BE IN JSONL FORMAT."
+        "Please read through the git repo and gain an understanding of the project. You are assigned the role of Lead QUALITY GUARDIAN — you're picking up after a swarm of LLMs just chewed through a bunch of tasks.\n"
+        "They were all working together on top of each other in pure chaos. The dust has settled — now stabilize quality.\n\n"
+        "POLICY:\n"
+        "- TESTS MUST RUN IN DOCKER via Make targets: use 'make test-both' (and 'make lint' as needed).\n"
+        "- DO NOT run tests directly on the host.\n"
+        "- You may use git to commit changes locally; the coordinator will push afterwards.\n\n"
+        "Workflow:\n"
+        "1. Using git, examine the current working tree and staged changes (if any). Note the source files that changed.\n"
+        "2. Examine the tests: ensure that tests comprehensively cover the changed code. If gaps exist, add tests.\n"
+        "3. Run tests using 'make test-both' (Docker).\n"
+        "4. If tests pass, git commit with a helpful message and EXIT 0.\n"
+        "5. If tests fail: emit JSONL entries for each failure, implement minimal fixes, and go to step 3.\n\n"
+        "ALL OUTPUT MUST BE IN JSONL FORMAT."
     )
     jsonl.emit('guardian_start')
     try:
@@ -65,7 +71,62 @@ def run_guardian(jsonl: JsonlLogger) -> int:
         return rc
     except FileNotFoundError:
         jsonl.emit('guardian_finish', rc=127, error='codex not found')
-    return 127
+        return 127
+
+
+def push_changes(jsonl: JsonlLogger) -> int:
+    try:
+        rc = subprocess.call(['git', 'push'])
+        jsonl.emit('push_finish', rc=rc)
+        return rc
+    except FileNotFoundError:
+        jsonl.emit('push_finish', rc=127, error='git not found')
+        return 127
+
+
+def preflight(jsonl: JsonlLogger, no_commit: bool = False) -> int:
+    jsonl.emit('preflight_start')
+    # Docker available
+    try:
+        rc = subprocess.call(['docker', 'version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        jsonl.emit('preflight_check', name='docker', rc=rc)
+        if rc != 0:
+            print('[PREFLIGHT] Docker not available or not running', file=sys.stderr)
+            return 1
+    except FileNotFoundError:
+        jsonl.emit('preflight_check', name='docker', rc=127)
+        print('[PREFLIGHT] docker CLI not found', file=sys.stderr)
+        return 1
+    # Make targets present
+    for tgt in ('test-both', 'lint'):
+        rc = subprocess.call(['make', '-n', tgt], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        jsonl.emit('preflight_check', name=f'make-{tgt}', rc=rc)
+        if rc != 0:
+            print(f'[PREFLIGHT] make target {tgt} unavailable', file=sys.stderr)
+            return 1
+    # Small commit and push (optional)
+    if no_commit:
+        jsonl.emit('preflight_skip_push', reason='no-commit flag set')
+    else:
+        pf = Path('docs/PREFLIGHT.md')
+        pf.parent.mkdir(parents=True, exist_ok=True)
+        with pf.open('a', encoding='utf-8') as f:
+            f.write('Preflight OK\n')
+        jsonl.emit('preflight_update_file', path=str(pf))
+        rc = subprocess.call(['git', 'add', str(pf)])
+        jsonl.emit('preflight_git_add', rc=rc)
+        if rc != 0:
+            print('[PREFLIGHT] git add failed', file=sys.stderr)
+            return 1
+        rc = subprocess.call(['git', 'commit', '-m', 'Preflight: validate push permissions'])
+        jsonl.emit('preflight_git_commit', rc=rc)
+        # If nothing to commit, still try push
+        prc = push_changes(jsonl)
+        if prc != 0:
+            print('[PREFLIGHT] git push failed', file=sys.stderr)
+            return 1
+    jsonl.emit('preflight_finish', rc=0)
+    return 0
 
 
 def run_followups(wave: int, jsonl: JsonlLogger) -> int:
@@ -78,6 +139,7 @@ def run_followups(wave: int, jsonl: JsonlLogger) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--waveStart', type=int, default=None)
+    ap.add_argument('--no-commit-preflight', action='store_true', help='Skip git commit/push during preflight')
     args = ap.parse_args()
 
     wave_start = args.waveStart or int(os.environ.get('TASK_WAVE_START', '0') or 0)
@@ -89,6 +151,9 @@ def main() -> int:
 
     base = Path('.slaps/tasks')
     jsonl = JsonlLogger(path=base.parent / 'logs' / 'events.jsonl')
+    # Preflight environment
+    if preflight(jsonl, no_commit=args.no_commit_preflight) != 0:
+        return 1
 
     for wave in range(wave_start, max_wave + 1):
         jsonl.emit('wave_start', wave=wave)
@@ -112,14 +177,19 @@ def main() -> int:
 
         dead_count = count_dead(base, wave)
         jsonl.emit('dead_count', wave=wave, count=dead_count)
-        if dead_count > 1:
-            print(f"[COORD] Dead queue has {dead_count} files (>1). Aborting.", file=sys.stderr)
+        if dead_count > 0:
+            print(f"[COORD] Dead queue has {dead_count} files (>0). Aborting.", file=sys.stderr)
             return 1
 
         print(f"[COORD] Running Quality Guardian LLM")
         rc = run_guardian(jsonl)
         if rc != 0:
             print(f"[COORD] Guardian returned {rc}; aborting", file=sys.stderr)
+            return 1
+        # Push changes after guardian success
+        prc = push_changes(jsonl)
+        if prc != 0:
+            print(f"[COORD] git push failed with {prc}; aborting", file=sys.stderr)
             return 1
         jsonl.emit('wave_complete', wave=wave)
 
