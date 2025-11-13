@@ -144,6 +144,62 @@ class TaskwatchTests(unittest.TestCase):
         self.assertIn("Previously tried:", prompt)
         self.assertIn("write it to .slaps/tasks/open/14.txt", prompt)
 
+    def test_unblocks_only_after_all_blockers_closed(self):
+        # edges: 1->3 and 2->3, so 3 is blocked by [1,2]
+        self.fs.write_text(self.paths.edges_csv, "1,3\n2,3\n")
+        self.fs.write_text(self.paths.raw / "issue-3.json", json.dumps({"relationships": {"blockedBy": [1, 2]}}))
+        self.fs.write_text(self.paths.blocked / "3.txt", "prompt for 3")
+
+        reporter = CaptureReporter()
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=reporter, paths=self.paths)
+
+        # Close 1: should NOT unblock 3 yet
+        closed1 = self.paths.closed / "1.txt"
+        self.fs.write_text(closed1, "done 1")
+        watcher.handle_closed(closed1, workers=[])
+        self.assertTrue((self.paths.blocked / "3.txt").exists())
+        self.assertEqual([], self.fs.list_files(self.paths.open))
+
+        # Close 2: now all blockers closed, 3 should move to open
+        closed2 = self.paths.closed / "2.txt"
+        self.fs.write_text(closed2, "done 2")
+        watcher.handle_closed(closed2, workers=[])
+        self.assertFalse((self.paths.blocked / "3.txt").exists())
+        self.assertEqual([self.paths.open / "3.txt"], self.fs.list_files(self.paths.open))
+
+    def test_unblocks_multiple_dependents_from_one_blocker(self):
+        # edges: 10->12 and 10->13; both blockedBy [10]
+        self.fs.write_text(self.paths.edges_csv, "10,12\n10,13\n")
+        self.fs.write_text(self.paths.raw / "issue-12.json", json.dumps({"relationships": {"blockedBy": [10]}}))
+        self.fs.write_text(self.paths.raw / "issue-13.json", json.dumps({"relationships": {"blockedBy": [10]}}))
+        self.fs.write_text(self.paths.blocked / "12.txt", "prompt 12")
+        self.fs.write_text(self.paths.blocked / "13.txt", "prompt 13")
+
+        reporter = CaptureReporter()
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=reporter, paths=self.paths)
+
+        closed10 = self.paths.closed / "10.txt"
+        self.fs.write_text(closed10, "done 10")
+        watcher.handle_closed(closed10, workers=[])
+
+        opens = sorted(self.fs.list_files(self.paths.open))
+        self.assertEqual([self.paths.open / "12.txt", self.paths.open / "13.txt"], opens)
+
+    def test_edges_header_parsing_unlocks(self):
+        # edges with header
+        self.fs.write_text(self.paths.edges_csv, "from,to\n21,22\n")
+        self.fs.write_text(self.paths.raw / "issue-22.json", json.dumps({"relationships": {"blockedBy": [21]}}))
+        self.fs.write_text(self.paths.blocked / "22.txt", "prompt 22")
+
+        reporter = CaptureReporter()
+        watcher = Watcher(fs=self.fs, llm=FakeLLM(), reporter=reporter, paths=self.paths)
+
+        closed21 = self.paths.closed / "21.txt"
+        self.fs.write_text(closed21, "done 21")
+        watcher.handle_closed(closed21, workers=[])
+
+        self.assertEqual([self.paths.open / "22.txt"], self.fs.list_files(self.paths.open))
+
 
 if __name__ == "__main__":
     unittest.main()
