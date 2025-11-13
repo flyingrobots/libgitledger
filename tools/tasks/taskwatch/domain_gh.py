@@ -419,9 +419,9 @@ class GHWorker:
         return latest
 
     def _extract_prompt_block(self, text: str) -> Optional[str]:
-        # Try to extract a ```text``` fenced block under a heading "Prompt"
+        # Try to extract a fenced block (``` or ```lang)
         import re
-        m = re.search(r"```(?:text)?\n([\s\S]*?)\n```", text)
+        m = re.search(r"```[a-zA-Z]*\n([\s\S]*?)\n```", text)
         if m:
             return m.group(1).strip()
         return None

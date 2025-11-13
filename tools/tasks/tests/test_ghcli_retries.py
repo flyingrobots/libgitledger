@@ -91,6 +91,20 @@ class GHCLIRetryTests(unittest.TestCase):
         out = gh.list_issue_comments(123)
         self.assertEqual([], out)
 
+    def test_repo_owner_name_fail_returns_empty_lists(self):
+        # When repo owner/name cannot be determined, list calls return [] gracefully
+        def always_fail(a):
+            return True
+        plan = [
+            (always_fail, CompletedProcess(['gh'], 1, '', 'err')),
+        ]
+        gh = GHCLI(runner=FlakyRunner(plan), retries=0)
+        self.assertEqual([], gh.list_issue_comments(1))
+        from tools.tasks.taskwatch.ports import GHProject
+        proj = GHProject(owner='me', number=1, id='PRJ1', title='P')
+        self.assertEqual([], gh.list_issues_for_wave(1))
+        self.assertEqual([], gh.get_blockers(1))
+
     def test_get_blockers_pagination(self):
         # Two-page GraphQL result should be aggregated
         def is_repo_view(a):

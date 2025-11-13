@@ -427,6 +427,62 @@ class TestGHFlow(unittest.TestCase):
         p = w._compose_prompt(42)
         self.assertEqual("new", p)
 
+    def test_tasks_without_prompt_block_falls_back_to_issue_body_ac(self):
+        # Add a TASKS comment without a fenced block; worker should use issue body+AC fallback
+        self.gh.comments = [
+            (42, "## TASKS\n\n(no prompt block here)")
+        ]
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        prompt = w._compose_prompt(42)
+        self.assertIn('Acceptance Criteria', prompt)
+
+    def test_prompt_fenced_any_language_accepted(self):
+        # Add a TASKS comment with ```md fenced block
+        self.gh.comments = [
+            (42, "## TASKS\n\n## Prompt\n\n```md\nhello world\n```")
+        ]
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        w = GHWorker(worker_id=1, gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                     locks=self.lock, project=prj, fields=fields)
+        prompt = w._compose_prompt(42)
+        self.assertEqual('hello world', prompt)
+
+    def test_unlock_sweep_does_not_open_failure_attempt3(self):
+        reporter = type("R", (), {"report": lambda self, s: None})()
+        watcher = GHWatcher(gh=self.gh, fs=self.fs, reporter=reporter, logger=None,
+                            raw_dir=self.raw, lock_dir=self.lock, project_title="P")
+        watcher.leader_ttl_sec = -1
+        watcher.preflight(wave=1)
+        watcher.initialize_items(wave=1)
+        prj = watcher.state.project
+        fields = watcher.state.fields
+        items = {it["content"]["number"]: it for it in self.gh.list_items(prj)}
+        id55 = items[55]["id"]
+        # Satisfy blockers (close 42) and set 55 to failure attempt=3
+        gh = self.gh
+        gh.set_item_single_select(prj, items[42]["id"], fields["slaps-state"], "closed")
+        gh.set_item_number_field(prj, id55, fields["slaps-attempt-count"], 3)
+        gh.set_item_single_select(prj, id55, fields["slaps-state"], "failure")
+        watcher.unlock_sweep(wave=1)
+        f = gh.get_item_fields(prj, id55)
+        self.assertEqual('failure', f.get('slaps-state'))
+
     def test_latest_tasks_comment_over_100(self):
         # 120 comments; latest should win
         self.gh.comments = []

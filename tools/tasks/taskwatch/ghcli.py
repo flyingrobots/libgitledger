@@ -57,6 +57,18 @@ class GHCLI(GHPort):
         out = self._run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
         return out.strip()
 
+    def _try_repo_owner(self) -> Optional[str]:
+        try:
+            return self.repo_owner()
+        except Exception:
+            return None
+
+    def _try_repo_name(self) -> Optional[str]:
+        try:
+            return self.repo_name()
+        except Exception:
+            return None
+
     def ensure_project(self, title: str) -> GHProject:
         owner = self.repo_owner()
         # Try to find existing
@@ -232,8 +244,10 @@ class GHCLI(GHPort):
 
     def list_issues_for_wave(self, wave: int) -> List[int]:
         # Query repository issues with label milestone::M{wave}
-        owner = self.repo_owner()
-        name = self.repo_name()
+        owner = self._try_repo_owner()
+        name = self._try_repo_name()
+        if not owner or not name:
+            return []
         nums: List[int] = []
         cursor = None
         label = f"milestone::M{wave}"
@@ -279,8 +293,10 @@ class GHCLI(GHPort):
 
     def get_blockers(self, issue_number: int) -> List[int]:
         # Try GraphQL dependencies: blockedBy issues
-        owner = self.repo_owner()
-        name = self.repo_name()
+        owner = self._try_repo_owner()
+        name = self._try_repo_name()
+        if not owner or not name:
+            return []
         q = {
             "query": """
             query($owner:String!, $name:String!, $number:Int!, $after:String) {
@@ -381,8 +397,10 @@ class GHCLI(GHPort):
 
     def list_issue_comments(self, issue_number: int) -> List[dict]:
         # GraphQL pagination of comments to ensure we see the latest
-        owner = self.repo_owner()
-        name = self.repo_name()
+        owner = self._try_repo_owner()
+        name = self._try_repo_name()
+        if not owner or not name:
+            return []
         cursor = None
         out_arr: List[dict] = []
         while True:
