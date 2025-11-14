@@ -12,6 +12,7 @@ from .logjson import JsonlLogger
 from .domain import extract_issue_number, get_blockers_from_raw
 from .cache import ItemsCache
 from .blockers_cache import BlockersCache
+from .waves_cache import WavesCache
 
 
 STATE_VALUES = ["open", "closed", "claimed", "failure", "dead", "blocked"]
@@ -47,6 +48,7 @@ class GHWatcher:
         self._last_progress_post: float = 0.0
         self.cache = ItemsCache(Path('.slaps/cache/project_items.json'))
         self.blockers_cache = BlockersCache(Path('.slaps/cache/blockers'), gh=self.gh, ttl_sec=getattr(self, 'blockers_ttl_sec', 300))
+        self.waves_cache = WavesCache(Path('.slaps/cache/waves.json'), ttl_sec=600)
         # refresh interval and blockers TTL tunables
         try:
             self.refresh_interval_sec = max(5, int(os.environ.get('SLAPS_REFRESH_SEC', '60')))
@@ -143,13 +145,28 @@ class GHWatcher:
             pass
 
     def _list_wave_issues_from_gh(self, wave: int) -> Set[int]:
+        # Try cache first
+        cached = None
+        try:
+            cached = self.waves_cache.get(wave)
+        except Exception:
+            cached = None
+        if cached:
+            if self.r:
+                self.r.report(f"[SYSTEM] Wave discovery (CACHE): found {len(cached)} issues for wave {wave}")
+            return set(int(x) for x in cached)
         # Primary: ask GitHub (label milestone::M{wave} or milestone title fallback)
         try:
             nums = self.gh.list_issues_for_wave(wave)
             if nums:
                 if self.r:
                     self.r.report(f"[SYSTEM] Wave discovery (GH): found {len(nums)} issues for wave {wave}")
-                return set(int(n) for n in nums)
+                out = set(int(n) for n in nums)
+                try:
+                    self.waves_cache.put(wave, out)
+                except Exception:
+                    pass
+                return out
         except Exception as e:
             if self.r:
                 self.r.report(f"[SYSTEM] Wave discovery (GH) failed: {e}")
@@ -185,6 +202,12 @@ class GHWatcher:
                 self.r.report(f"[SYSTEM] Wave discovery (RAW) failed: {e}")
         if out and self.r:
             self.r.report(f"[SYSTEM] Wave discovery (RAW): found {len(out)} issues for wave {wave}")
+        # Write what we found to cache
+        try:
+            if out:
+                self.waves_cache.put(wave, out)
+        except Exception:
+            pass
         return out
 
     # Back-compat shim: older caller expects a RAW-based enumerator name. Our GH
@@ -396,6 +419,51 @@ class GHWatcher:
             simple.append({'id': it.get('id'), 'num': num, 'fields': fields_map})
         self.cache.write(simple, now)
         self._last_cache_refresh_ts = now
+
+    def reconcile_closed_state(self) -> None:
+        """Occasional lightweight reconciliation: when GH issue is CLOSED, set slaps-state to closed.
+
+        To minimize GH calls, sample at most N items per run and only for items whose
+        cached state is not already 'closed'. Controlled by SLAPS_RECONCILE_SEC and
+        SLAPS_RECONCILE_MAX (default 600s / 10 items).
+        """
+        if not self._is_leader():
+            return
+        try:
+            import time as _t, os as _os
+            interval = int(_os.environ.get('SLAPS_RECONCILE_SEC', '600'))
+            limit = int(_os.environ.get('SLAPS_RECONCILE_MAX', '10'))
+        except Exception:
+            interval = 600
+            limit = 10
+        if not hasattr(self, '_last_reconcile_ts'):
+            self._last_reconcile_ts = 0.0
+        now = __import__('time').time()
+        if now - self._last_reconcile_ts < interval:
+            return
+        self._last_reconcile_ts = now
+        data = self.cache.read() or {}
+        items = data.get('items') or []
+        count = 0
+        for it in items:
+            if count >= limit:
+                break
+            num = it.get('num')
+            fields = it.get('fields') or {}
+            st = fields.get('slaps-state')
+            if st == 'closed':
+                continue
+            try:
+                istate = self.gh.fetch_issue_json(int(num)).get('state')
+            except Exception:
+                continue
+            if istate == 'CLOSED' and it.get('id'):
+                try:
+                    f_state = self.state.field('slaps-state')
+                    self.gh.set_item_single_select(self.state.project, it['id'], f_state, 'closed')
+                    count += 1
+                except Exception:
+                    pass
 
 
 class GHWorker:

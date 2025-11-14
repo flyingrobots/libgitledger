@@ -97,8 +97,10 @@ def main() -> int:
             # The watcher refreshes cache after lock/unlock; still do a periodic touch
             try:
                 watcher.refresh_cache()
+                watcher.reconcile_closed_state()
             except Exception:
                 pass
+            # Sleep primarily governed by SLAPS_REFRESH_SEC inside refresh_cache
             time.sleep(5)
 
     # Spawn workers (allow override to reduce GH pressure)
