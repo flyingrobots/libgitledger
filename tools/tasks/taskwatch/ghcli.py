@@ -308,26 +308,10 @@ class GHCLI(GHPort):
                 last_err = f"graphql parse error: {e}"
         else:
             last_err = cp.stderr or "graphql add failed"
-        # Fallback to CLI JSON
-        try:
-            out = self._run_ok(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id, "--format", "json"])
-            data = json.loads(out or "{}")
-            if isinstance(data, dict) and data.get("id"):
-                return data["id"]
-        except Exception as e:
-            last_err = f"project-id add failed: {e}"
-        # Fallback: owner/number with content-id
-        try:
-            out2 = self._run_ok(["gh", "project", "item-add", "--owner", project.owner, "--number", str(project.number), "--content-id", content_id, "--format", "json"])
-            data2 = json.loads(out2 or "{}")
-            if isinstance(data2, dict) and data2.get("id"):
-                return data2["id"]
-        except Exception as e:
-            last_err = f"owner/number add failed: {e}"
-        # Fallback: owner/number with URL
+        # Fallback: CLI add by URL (older gh supports this form)
         try:
             url = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "url", "--jq", ".url")).strip()
-            cp3 = self._run(["gh", "project", "item-add", "--owner", project.owner, "--number", str(project.number), "--url", url])
+            cp3 = self._run(["gh", "project", "item-add", str(project.number), "--owner", project.owner, "--url", url])
             if cp3.returncode == 0:
                 iid3 = self.find_item_by_issue(project, issue_number)
                 if iid3:
@@ -336,12 +320,6 @@ class GHCLI(GHPort):
                 last_err = cp3.stderr or last_err
         except Exception as e:
             last_err = f"url add failed: {e}"
-        # As a last resort, try minimal add without JSON and re-scan
-        cp4 = self._run(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id])
-        if cp4.returncode == 0:
-            iid4 = self.find_item_by_issue(project, issue_number)
-            if iid4:
-                return iid4
         raise RuntimeError(f"failed to add issue to project (last_err={last_err})")
 
     def list_items(self, project: GHProject) -> List[dict]:
