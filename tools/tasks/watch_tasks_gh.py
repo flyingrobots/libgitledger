@@ -73,12 +73,17 @@ def main() -> int:
     def worker_loop(wid: int) -> None:
         w = GHWorker(worker_id=wid, gh=gh, fs=fs, reporter=reporter, logger=jsonl,
                      locks=base / 'lock', project=project, fields=fields, wave=wave, wave_issue=wave_issue)
+        # Idle backoff to reduce churn when there are no open issues
+        try:
+            idle_sleep = int(os.environ.get('SLAPS_WORKER_IDLE_SLEEP', '60'))
+        except Exception:
+            idle_sleep = 60
         while not stop.is_set():
             # Pick an open issue
             open_issues = w._list_open_issues(wave)
             if not open_issues:
                 reporter.report(f"[WORKER:{wid:03d}] Open issues: 0; sleeping")
-                time.sleep(10)
+                time.sleep(idle_sleep)
                 continue
             reporter.report(f"[WORKER:{wid:03d}] Open issues: {len(open_issues)}")
             claimed = False
