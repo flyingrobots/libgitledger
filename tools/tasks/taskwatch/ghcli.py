@@ -103,6 +103,16 @@ class GHCLI(GHPort):
             return None, None
 
     def ensure_project(self, title: str) -> GHProject:
+        # Try local cache first to avoid rate limits
+        try:
+            from pathlib import Path as _P
+            cache = _P('.slaps/tasks/admin/gh_project.json')
+            if cache.exists():
+                data = json.loads(cache.read_text(encoding='utf-8'))
+                if isinstance(data, dict) and data.get('title') == title:
+                    return GHProject(owner=data['owner'], number=int(data['number']), id=data['id'], title=data['title'])
+        except Exception:
+            pass
         owner = self.repo_owner()
         # Try GraphQL listing for user, then org
         def _list_projects_graphql(owner_login: str) -> List[dict]:
@@ -146,7 +156,15 @@ class GHCLI(GHPort):
         nodes = _list_projects_graphql(owner)
         for n in nodes:
             if n.get("title") == title:
-                return GHProject(owner=owner, number=int(n["number"]), id=n["id"], title=title)
+                prj = GHProject(owner=owner, number=int(n["number"]), id=n["id"], title=title)
+                # cache it
+                try:
+                    from pathlib import Path as _P
+                    cache = _P('.slaps/tasks/admin'); cache.mkdir(parents=True, exist_ok=True)
+                    (_P('.slaps/tasks/admin/gh_project.json')).write_text(json.dumps(prj.__dict__), encoding='utf-8')
+                except Exception:
+                    pass
+                return prj
         # Fallback to CLI JSON, tolerate older gh returning non-JSON
         try:
             out = self._run_ok(["gh", "project", "list", "--owner", owner, "--format", "json"])
@@ -156,13 +174,27 @@ class GHCLI(GHPort):
             if isinstance(arr, list):
                 for prj in arr:
                     if isinstance(prj, dict) and prj.get("title") == title:
-                        return GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
+                        p = GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
+                        try:
+                            from pathlib import Path as _P
+                            cache = _P('.slaps/tasks/admin'); cache.mkdir(parents=True, exist_ok=True)
+                            (_P('.slaps/tasks/admin/gh_project.json')).write_text(json.dumps(p.__dict__), encoding='utf-8')
+                        except Exception:
+                            pass
+                        return p
         except Exception:
             pass
         # Create
         out = self._run_ok(["gh", "project", "create", "--owner", owner, "--title", title, "--format", "json"])
         prj = json.loads(out)
-        return GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
+        proj = GHProject(owner=owner, number=int(prj["number"]), id=prj["id"], title=title)
+        try:
+            from pathlib import Path as _P
+            cache = _P('.slaps/tasks/admin'); cache.mkdir(parents=True, exist_ok=True)
+            (_P('.slaps/tasks/admin/gh_project.json')).write_text(json.dumps(proj.__dict__), encoding='utf-8')
+        except Exception:
+            pass
+        return proj
 
     def ensure_labels(self, labels: List[str]) -> None:
         try:
