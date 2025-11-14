@@ -26,6 +26,9 @@ USAGE
 if root=$(git rev-parse --show-toplevel 2>/dev/null); then
   cd "$root"
 fi
+# Purge any stale bytecode so updated sources are always loaded
+find tools -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find tools -name '*.pyc' -delete 2>/dev/null || true
 
 WAVE=""
 WORKERS=2
@@ -82,6 +85,9 @@ fi
 # Kick coordinator
 PY=${PYTHON:-python3}
 if ! command -v "$PY" >/dev/null 2>&1; then PY=python; fi
+
+# Guarantee repo root on module path for -m imports
+export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
 mkdir -p .slaps/logs || true
 echo "[SLAPS] Launching coordinator (wave=$WAVE, mode=$MODE). Live log: .slaps/logs/coord.out"
