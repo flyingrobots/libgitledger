@@ -15,13 +15,13 @@ class _Runner:
 
 
 class GHCLI(GHPort):
-    def __init__(self, repo: Optional[str] = None, runner: Optional[_Runner] = None, retries: int = 2):
+    def __init__(self, repo: Optional[str] = None, runner: Optional[_Runner] = None, retries: int = 5):
         self._repo = repo  # optional override for -R
         self._runner = runner or _Runner()
         self._retries = retries
 
     def _run(self, args: List[str]) -> subprocess.CompletedProcess:
-        backoffs = [0.0, 0.2, 0.5]
+        backoffs = [0.0, 0.5, 1.0, 2.0, 5.0]
         last = None
         for i in range(self._retries + 1):
             cp = self._runner.run(args)
@@ -32,7 +32,9 @@ class GHCLI(GHPort):
             import time as _t
             err = (cp.stderr or '').lower()
             if 'secondary rate limit' in err:
-                _t.sleep(0.8)  # longer pause for rate limits
+                _t.sleep(3.0)  # longer pause for secondary rate limits
+            elif 'api rate limit exceeded' in err:
+                _t.sleep(15.0)
             else:
                 _t.sleep(backoffs[min(i, len(backoffs) - 1)])
         return last or subprocess.CompletedProcess(args, 1, '', 'retry failed')

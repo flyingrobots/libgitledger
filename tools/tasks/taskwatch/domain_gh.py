@@ -390,6 +390,16 @@ class GHWorker:
             pass
 
     def _list_open_issues(self, wave: int) -> List[int]:
+        # Throttle calls to list_items to avoid GraphQL rate limits.
+        now = time.time()
+        cache_secs = 15.0
+        if not hasattr(self, "_open_cache"):
+            self._open_cache = {}
+            self._open_cache_ts = 0.0
+        if now - getattr(self, "_open_cache_ts", 0.0) < cache_secs:
+            cached = self._open_cache.get(wave)
+            if cached is not None:
+                return list(cached)
         items = self.gh.list_items(self.project)
         out: List[int] = []
         for it in items:
@@ -405,7 +415,10 @@ class GHWorker:
                 wv = None
             if num and st == "open" and wv == wave:
                 out.append(num)
-        return sorted(out)
+        out = sorted(out)
+        self._open_cache[wave] = out
+        self._open_cache_ts = now
+        return out
 
     def claim_and_verify(self, issue: int, timeout: float = 60.0) -> bool:
         if not self._atomic_lock_create(issue):
