@@ -96,8 +96,8 @@ def main() -> int:
             watcher.unlock_sweep(wave)
             time.sleep(2)
 
-    # Spawn workers
-    n = os.cpu_count() or 1
+    # Spawn workers (allow override to reduce GH pressure)
+    n = int(os.environ.get('SLAPS_WORKERS', str(os.cpu_count() or 1)))
     for i in range(1, n + 1):
         t = threading.Thread(target=worker_loop, name=f"gh-worker-{i}", args=(i,), daemon=True)
         workers.append(t)
