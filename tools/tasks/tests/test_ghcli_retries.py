@@ -124,6 +124,24 @@ class GHCLIRetryTests(unittest.TestCase):
         self.assertEqual([], gh.list_issues_for_wave(1))
         self.assertEqual([], gh.get_blockers(1))
 
+    def test_create_issue_cli_fallback_parses_url(self):
+        # API path fails, CLI path returns a URL line; we parse number
+        def is_repo_view(a):
+            return a[:3] == ['gh', 'repo', 'view']
+        def is_api(a):
+            return a[:2] == ['gh', 'api'] and 'repos/' in ' '.join(a)
+        def is_issue_create(a):
+            return a[:3] == ['gh', 'issue', 'create']
+        plan = [
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"owner":{"login":"me"}}\n', '')),
+            (is_repo_view, CompletedProcess(['gh'], 0, '{"name":"repo"}\n', '')),
+            (is_api, CompletedProcess(['gh'], 1, '', 'api down')),
+            (is_issue_create, CompletedProcess(['gh'], 0, 'https://github.com/me/repo/issues/345\n', '')),
+        ]
+        gh = GHCLI(runner=FlakyRunner(plan), retries=0)
+        num = gh.create_issue("title", "body")
+        self.assertEqual(345, num)
+
     def test_get_blockers_pagination(self):
         # Two-page GraphQL result should be aggregated
         def is_repo_view(a):

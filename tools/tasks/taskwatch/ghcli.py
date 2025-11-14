@@ -448,6 +448,27 @@ class GHCLI(GHPort):
         return data.get("id", "")
 
     def create_issue(self, title: str, body: str) -> int:
-        out = self._run_ok(["gh", "issue", "create", "--title", title, "--body", body, "--json", "number"])
-        data = json.loads(out or "{}")
-        return int(data.get("number", 0))
+        # Prefer gh api for consistent JSON; fallback to CLI create with URL parsing
+        owner = self._try_repo_owner()
+        name = self._try_repo_name()
+        if owner and name:
+            cp = self._run(["gh", "api", f"repos/{owner}/{name}/issues", "-f", f"title={title}", "-f", f"body={body}"])
+            if cp.returncode == 0:
+                try:
+                    data = json.loads(cp.stdout or "{}")
+                    num = int(data.get("number", 0))
+                    if num:
+                        return num
+                except Exception:
+                    pass
+        # Fallback: gh issue create (older gh), parse issue number from stdout URL
+        cp2 = self._run(["gh", "issue", "create", "--title", title, "--body", body])
+        if cp2.returncode == 0:
+            import re
+            m = re.search(r"/issues/(\d+)", cp2.stdout or "")
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    pass
+        raise RuntimeError("failed to create issue via gh api or cli")
