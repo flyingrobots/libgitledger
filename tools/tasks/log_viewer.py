@@ -28,11 +28,12 @@ def ensure_window(session: str, name: str, cmd: str) -> None:
     wins = list_windows(session)
     if name in wins:
         return
-    run(['tmux', 'new-window', '-t', session, '-n', name, 'bash', '-lc', cmd])
+    # Use POSIX sh to avoid sourcing interactive bash rc that might call 'setsid'
+    run(['tmux', 'new-window', '-t', session, '-n', name, 'sh', '-lc', cmd])
 
 
 def ensure_split(session: str, target: str, cmd: str) -> None:
-    run(['tmux', 'split-window', '-h', '-t', f'{session}:{target}', 'bash', '-lc', cmd])
+    run(['tmux', 'split-window', '-h', '-t', f'{session}:{target}', 'sh', '-lc', cmd])
 
 
 def main() -> int:
@@ -61,7 +62,7 @@ def main() -> int:
 
     # Create session if needed
     if not exists:
-        run(['tmux', 'new-session', '-d', '-s', session, '-n', 'events', 'bash', '-lc', 'tail -F .slaps/logs/events.jsonl'])
+        run(['tmux', 'new-session', '-d', '-s', session, '-n', 'events', 'sh', '-lc', 'tail -F .slaps/logs/events.jsonl'])
     else:
         # Ensure events window exists
         ensure_window(session, 'events', 'tail -F .slaps/logs/events.jsonl')

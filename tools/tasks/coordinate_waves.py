@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import traceback
 
 from .taskwatch.logjson import JsonlLogger
 from .taskwatch.ghcli import GHCLI
@@ -71,9 +72,18 @@ def run_watcher_gh(wave: int, wave_issue: int | None = None) -> int:
     env = os.environ.copy()
     if wave_issue:
         env['WAVE_STATUS_ISSUE'] = str(wave_issue)
+    env['TASK_WAVE'] = str(wave)
     try:
         proc = subprocess.Popen([sys.executable, '-m', 'tools.tasks.watch_tasks_gh', '--wave', str(wave)], stdout=out_f, stderr=err_f, env=env)
         rc = proc.wait()
+        if rc != 0:
+            try:
+                err_tail = (logs / 'watcher.err').read_text(encoding='utf-8', errors='replace').splitlines()[-50:]
+                print('[COORD] watcher.err (last 50 lines):', file=sys.stderr)
+                for line in err_tail:
+                    print(line, file=sys.stderr)
+            except Exception:
+                pass
         return rc
     finally:
         out_f.close(); err_f.close()
@@ -179,6 +189,7 @@ def main() -> int:
     ap.add_argument('--waveStart', type=int, default=None)
     ap.add_argument('--no-commit-preflight', action='store_true', help='Skip git commit/push during preflight')
     ap.add_argument('--mode', choices=['fs','gh'], default='fs', help='Coordinator mode: fs (legacy) or gh (project-backed)')
+    # Always surface errors; no debug flag needed.
     args = ap.parse_args()
 
     wave_start = args.waveStart or int(os.environ.get('TASK_WAVE_START', '0') or 0)
@@ -198,9 +209,24 @@ def main() -> int:
             repo = gh.repo_name()
             project_title = f"SLAPS-{repo}"
             project = gh.ensure_project(project_title)
-        except Exception:
-            print('[COORD] GH setup failed', file=sys.stderr)
-            return 2
+        except Exception as e:
+            # Soft-fail: proceed without project bootstrap (no draft updates, GH counts)
+            gh = GHCLI()
+            project = None
+            print(f"[COORD] GH bootstrap soft-failed: {type(e).__name__}: {e}. Continuing without project updates.", file=sys.stderr)
+            print("[COORD] Traceback:", file=sys.stderr)
+            traceback.print_exc()
+            # Minimal diagnostics for owner/name
+            try:
+                owner = gh.repo_owner()
+                print(f"[COORD] repo owner: {owner}", file=sys.stderr)
+            except Exception as ee:
+                print(f"[COORD] repo_owner failed: {ee}", file=sys.stderr)
+            try:
+                name = gh.repo_name()
+                print(f"[COORD] repo name: {name}", file=sys.stderr)
+            except Exception as ee:
+                print(f"[COORD] repo_name failed: {ee}", file=sys.stderr)
 
     def bar(pct: int) -> str:
         width = 20
@@ -217,8 +243,13 @@ def main() -> int:
             pass
 
     if args.mode == 'gh':
-        # determine maximum wave by probing GH
-        max_wave = parse_max_wave_gh(gh)
+        # determine maximum wave by probing GH; if it fails, run a single wave as requested
+        try:
+            max_wave = parse_max_wave_gh(gh)
+        except Exception as e:
+            print(f"[COORD] Could not probe waves from GH: {type(e).__name__}: {e}. Falling back to waveStart only.", file=sys.stderr)
+            traceback.print_exc()
+            max_wave = wave_start
         if wave_start <= 0 or max_wave <= 0:
             print('Invalid waveStart or no waves found on GH', file=sys.stderr)
             return 2
@@ -248,6 +279,7 @@ def main() -> int:
             coord = CoordinatorGH(gh)
             wave_issue_num = coord.create_wave_status_issue(project, wave)
         if args.mode == 'gh':
+            # Pass wave to watcher env for better progress comments
             rc = run_watcher_gh(wave, wave_issue=wave_issue_num)
         else:
             rc = run_watcher(wave)
@@ -275,6 +307,8 @@ def main() -> int:
             if coord.should_abort(counts):
                 print(f"[COORD] Dead items present in project. Aborting.", file=sys.stderr)
                 return 1
+        elif args.mode == 'gh' and project is None:
+            print('[COORD] Skipping GH counts/abort due to missing project. Proceeding.', file=sys.stderr)
         else:
             dead_count = count_dead(base, wave)
             jsonl.emit('dead_count', wave=wave, count=dead_count)

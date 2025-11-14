@@ -17,9 +17,54 @@ class CoordinatorGH:
             f"## SLAPS Wave {wave}\n\n"
             "This issue tracks progress for the wave. Comments will include progress updates.\n"
         )
-        num = self.gh.create_issue(title, body)
-        # Add to project
-        self.gh.ensure_issue_in_project(project, num)
+        # Deduplicate: reuse existing issue if present
+        existing = None
+        try:
+            import subprocess, json, sys
+            print(f"[COORD] Looking up existing wave status issue by title: {title}", file=sys.stderr)
+            cp = subprocess.run(
+                ['gh','issue','list','--state','all','--search',title,'--json','number,title','--limit','100'],
+                capture_output=True, text=True
+            )
+            if cp.returncode == 0:
+                arr = json.loads(cp.stdout or '[]')
+                for it in arr or []:
+                    if isinstance(it, dict) and it.get('title') == title and isinstance(it.get('number'), int):
+                        existing = it['number']
+                        print(f"[COORD] Reusing existing issue #{existing} for wave {wave}", file=sys.stderr)
+                        break
+        except Exception as e:
+            print(f"[COORD] Title search via gh failed: {e}", file=sys.stderr)
+        if existing is None and hasattr(self.gh, 'find_issue_by_title'):
+            try:
+                existing = self.gh.find_issue_by_title(title)  # type: ignore[attr-defined]
+                if existing:
+                    print(f"[COORD] Reusing existing issue via GHPort #{existing}", file=sys.stderr)
+            except Exception as e:
+                print(f"[COORD] GHPort.find_issue_by_title failed: {e}", file=sys.stderr)
+        if existing:
+            num = existing
+        else:
+            num = self.gh.create_issue(title, body)
+            print(f"[COORD] Created wave status issue #{num}", file=sys.stderr)
+        # Add to project (best effort)
+        try:
+            self.gh.ensure_issue_in_project(project, num)
+            print(f"[COORD] Added issue #{num} to project {project.title} ({project.number})", file=sys.stderr)
+        except Exception:
+            # fallback: try CLI URL add then verify via list
+            try:
+                import subprocess, json, sys
+                # add by URL if supported
+                url_cp = subprocess.run(['gh','issue','view',str(num),'--json','url','--jq','.url'], capture_output=True, text=True)
+                if url_cp.returncode == 0:
+                    issue_url = url_cp.stdout.strip()
+                    cp2 = subprocess.run(['gh','project','item-add','--owner', project.owner, '--number', str(project.number), '--url', issue_url], capture_output=True, text=True)
+                    print(f"[COORD] Fallback add by URL rc={cp2.returncode}", file=sys.stderr)
+                # verify by re-scan through GHPort
+                _ = self.gh.find_item_by_issue(project, num)  # type: ignore[attr-defined]
+            except Exception:
+                pass
         return num
 
     def compute_counts(self, project: GHProject, wave: int) -> Dict[str, int]:

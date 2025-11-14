@@ -65,6 +65,18 @@ class CoordinatorGHUnitTests(unittest.TestCase):
         item_id = gh.find_item_by_issue(project, num)
         self.assertIsNotNone(item_id)
 
+    def test_wave_status_issue_deduplicates(self):
+        from tools.tasks.coordinator_gh import CoordinatorGH
+        gh = FakeGH()
+        watcher = self._watcher(gh)
+        watcher.preflight(wave=1)
+        project = watcher.state.project
+        coord = CoordinatorGH(gh)
+        n1 = coord.create_wave_status_issue(project, wave=1)
+        # Second call should reuse same number (dedupe)
+        n2 = coord.create_wave_status_issue(project, wave=1)
+        self.assertEqual(n1, n2)
+
     def test_mini_flow_no_dead_does_not_abort(self):
         from tools.tasks.coordinator_gh import CoordinatorGH
         gh = FakeGH()

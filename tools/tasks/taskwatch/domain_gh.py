@@ -129,11 +129,49 @@ class GHWatcher:
             pass
 
     def _list_wave_issues_from_gh(self, wave: int) -> Set[int]:
+        # Primary: ask GitHub (label milestone::M{wave} or milestone title fallback)
         try:
             nums = self.gh.list_issues_for_wave(wave)
-            return set(int(n) for n in nums)
-        except Exception:
-            return set()
+            if nums:
+                if self.r:
+                    self.r.report(f"[SYSTEM] Wave discovery (GH): found {len(nums)} issues for wave {wave}")
+                return set(int(n) for n in nums)
+        except Exception as e:
+            if self.r:
+                self.r.report(f"[SYSTEM] Wave discovery (GH) failed: {e}")
+        # Fallback: read raw cache under .slaps/tasks/raw
+        out: Set[int] = set()
+        try:
+            for jf in sorted(self.raw_dir.glob('issue-*.json')):
+                try:
+                    data = json.loads(jf.read_text(encoding='utf-8'))
+                except Exception:
+                    continue
+                num = data.get('number')
+                if not isinstance(num, int):
+                    continue
+                labels = data.get('labels') or []
+                ok = False
+                for lab in labels:
+                    name = lab.get('name') if isinstance(lab, dict) else None
+                    if isinstance(name, str) and name.strip() == f"milestone::M{wave}":
+                        ok = True
+                        break
+                # Also allow milestone title like "M{wave}" or "Wave {wave}"
+                if not ok:
+                    ms = data.get('milestone') or {}
+                    title = ms.get('title') if isinstance(ms, dict) else None
+                    if isinstance(title, str):
+                        if title.strip() == f"M{wave}" or title.strip().lower() == f"wave {wave}":
+                            ok = True
+                if ok:
+                    out.add(num)
+        except Exception as e:
+            if self.r:
+                self.r.report(f"[SYSTEM] Wave discovery (RAW) failed: {e}")
+        if out and self.r:
+            self.r.report(f"[SYSTEM] Wave discovery (RAW): found {len(out)} issues for wave {wave}")
+        return out
 
     def initialize_items(self, wave: int) -> None:
         assert self.state is not None
@@ -142,7 +180,10 @@ class GHWatcher:
         f_wave = self.state.field("slaps-wave")
         f_attempt = self.state.field("slaps-attempt-count")
 
-        for issue in sorted(self._list_wave_issues_from_gh(wave)):
+        issues = sorted(self._list_wave_issues_from_gh(wave))
+        if not issues and self.r:
+            self.r.report(f"[SYSTEM] No issues discovered for wave {wave}. Ensure label 'milestone::M{wave}' or milestone 'M{wave}'.")
+        for issue in issues:
             item_id = self.gh.ensure_issue_in_project(project, issue)
             # Set initial fields: wave, attempt=0, state=blocked
             self.gh.set_item_number_field(project, item_id, f_wave, wave)

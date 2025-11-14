@@ -18,6 +18,7 @@ class FakeGH(GHPort):
         self.items = {}  # project_id -> list of {id, content:{number}, fields:[{name,value}]}
         self.issue_id = {}  # number -> node id
         self.comments = []
+        self.issue_titles = {}
         self.wave_map = {42: 1, 55: 1, 56: 1}
         self.blockers = {55: [42], 56: [55]}
         
@@ -144,8 +145,14 @@ class FakeGH(GHPort):
         if self.issue_id:
             new_num = max(self.issue_id.keys()) + 1
         self.issue_id[new_num] = f"ISSUE{new_num}"
-        # In this FakeGH we don't persist titles/bodies beyond ID allocation
+        self.issue_titles[new_num] = title
         return new_num
+
+    def find_issue_by_title(self, title: str) -> int | None:
+        for n, t in self.issue_titles.items():
+            if t == title:
+                return n
+        return None
 
 
 class TestGHFlow(unittest.TestCase):
