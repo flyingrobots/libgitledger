@@ -52,12 +52,26 @@ class GHCLI(GHPort):
         return base
 
     def repo_owner(self) -> str:
-        out = self._run_ok(["gh", "repo", "view", "--json", "owner", "--jq", ".owner.login"])
-        return out.strip()
+        try:
+            out = self._run_ok(["gh", "repo", "view", "--json", "owner", "--jq", ".owner.login"])
+            return out.strip()
+        except Exception:
+            # Fallback: parse from git remote
+            owner, _ = self._owner_name_from_git()
+            if owner:
+                return owner
+            raise
 
     def repo_name(self) -> str:
-        out = self._run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
-        return out.strip()
+        try:
+            out = self._run_ok(["gh", "repo", "view", "--json", "name", "--jq", ".name"])
+            return out.strip()
+        except Exception:
+            # Fallback: parse from git remote
+            _, name = self._owner_name_from_git()
+            if name:
+                return name
+            raise
 
     def _try_repo_owner(self) -> Optional[str]:
         try:
@@ -70,6 +84,23 @@ class GHCLI(GHPort):
             return self.repo_name()
         except Exception:
             return None
+
+    def _owner_name_from_git(self) -> tuple[Optional[str], Optional[str]]:
+        try:
+            cp = self._run(["git", "config", "--get", "remote.origin.url"])
+            if cp.returncode != 0:
+                return None, None
+            url = (cp.stdout or "").strip()
+            if not url:
+                return None, None
+            import re
+            # git@github.com:owner/name.git or https://github.com/owner/name.git
+            m = re.search(r"github\.com[:/]+([^/]+)/([^/.]+)(?:\.git)?$", url)
+            if not m:
+                return None, None
+            return m.group(1), m.group(2)
+        except Exception:
+            return None, None
 
     def ensure_project(self, title: str) -> GHProject:
         owner = self.repo_owner()
