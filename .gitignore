@@ -75,3 +75,7 @@ website/node_modules/
 FEEDBACK.md
 .claude/
 .slaps/
+
+# Python cache
+__pycache__/
+*.pyc
