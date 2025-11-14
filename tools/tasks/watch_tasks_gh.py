@@ -94,7 +94,12 @@ def main() -> int:
         while not stop.is_set():
             watcher.watch_locks()
             watcher.unlock_sweep(wave)
-            time.sleep(2)
+            # The watcher refreshes cache after lock/unlock; still do a periodic touch
+            try:
+                watcher.refresh_cache()
+            except Exception:
+                pass
+            time.sleep(5)
 
     # Spawn workers (allow override to reduce GH pressure)
     n = int(os.environ.get('SLAPS_WORKERS', str(os.cpu_count() or 1)))

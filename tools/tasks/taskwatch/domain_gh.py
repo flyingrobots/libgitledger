@@ -10,6 +10,7 @@ from .ports import FilePort, ReporterPort, GHPort, GHProject, GHField
 from .adapters import LocalFS
 from .logjson import JsonlLogger
 from .domain import extract_issue_number, get_blockers_from_raw
+from .cache import ItemsCache
 
 
 STATE_VALUES = ["open", "closed", "claimed", "failure", "dead", "blocked"]
@@ -43,6 +44,7 @@ class GHWatcher:
         self.lock_ttl_sec = 1800  # default lease window for stale lock cleanup
         self.progress_debounce_sec = 5
         self._last_progress_post: float = 0.0
+        self.cache = ItemsCache(Path('.slaps/cache/project_items.json'))
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
@@ -196,6 +198,11 @@ class GHWatcher:
             self.gh.set_item_single_select(project, item_id, f_state, "blocked")
             self._emit("init_item", issue=issue, item_id=item_id, wave=wave)
         self.r.report(f"[SYSTEM] Initialized wave {wave} issues in project")
+        # Prime cache after initialization
+        try:
+            self.refresh_cache()
+        except Exception:
+            pass
 
     def _get_field_value(self, fields_map: Dict[str, str], name: str) -> Optional[str]:
         return fields_map.get(name)
@@ -273,6 +280,11 @@ class GHWatcher:
                         self._emit("unlock_open", issue=issue)
         if opened:
             self.r.report(f"[SYSTEM] Opened {opened} issues in wave {wave}")
+        # Refresh cache after reconciliation/opening
+        try:
+            self.refresh_cache()
+        except Exception:
+            pass
         # Reconcile: if GH issue closed but slaps-state not 'closed', set it
         for it in items:
             issue = (it.get('content') or {}).get('number')
@@ -351,6 +363,34 @@ class GHWatcher:
                         self._last_progress_post = now
             except Exception:
                 pass
+        # Refresh cache after claims processed
+        try:
+            self.refresh_cache()
+        except Exception:
+            pass
+
+    def refresh_cache(self) -> None:
+        """Leader fetches items from GH and writes a simplified shared cache.
+
+        Workers read this cache to find open issues, reducing GH API calls.
+        """
+        if not self._is_leader():
+            return
+        assert self.state is not None
+        from time import time as _t
+        items = self.gh.list_items(self.state.project)
+        simple = []
+        for it in items:
+            num = (it.get('content') or {}).get('number')
+            if not isinstance(num, int):
+                continue
+            fields_map = {}
+            for f in it.get('fields') or []:
+                nm = (f.get('name') or f.get('field', {}).get('name') or '').strip()
+                val = f.get('value')
+                fields_map[nm] = val.get('name') if isinstance(val, dict) else val
+            simple.append({'id': it.get('id'), 'num': num, 'fields': fields_map})
+        self.cache.write(simple, _t())
 
 
 class GHWorker:
@@ -390,35 +430,40 @@ class GHWorker:
             pass
 
     def _list_open_issues(self, wave: int) -> List[int]:
-        # Throttle calls to list_items to avoid GraphQL rate limits.
-        now = time.time()
-        cache_secs = 15.0
-        if not hasattr(self, "_open_cache"):
-            self._open_cache = {}
-            self._open_cache_ts = 0.0
-        if now - getattr(self, "_open_cache_ts", 0.0) < cache_secs:
-            cached = self._open_cache.get(wave)
-            if cached is not None:
-                return list(cached)
-        items = self.gh.list_items(self.project)
-        out: List[int] = []
-        for it in items:
-            content = it.get("content") or {}
-            num = content.get("number")
-            fields = { (f.get("name") or f.get("field", {}).get("name") or "").strip(): f.get("value") for f in (it.get("fields") or []) }
-            st = fields.get("slaps-state")
-            st = st.get("name") if isinstance(st, dict) else st
-            wv = fields.get("slaps-wave")
-            try:
-                wv = int(wv) if not isinstance(wv, dict) else None
-            except Exception:
-                wv = None
-            if num and st == "open" and wv == wave:
-                out.append(num)
-        out = sorted(out)
-        self._open_cache[wave] = out
-        self._open_cache_ts = now
-        return out
+        # Prefer shared cache written by the watcher to avoid GH calls.
+        try:
+            return self.gh_cache_get_open(wave)
+        except Exception:
+            # Fallback (rare): attempt a direct scan if cache missing
+            items = self.gh.list_items(self.project)
+            out: List[int] = []
+            for it in items:
+                content = it.get("content") or {}
+                num = content.get("number")
+                fields = { (f.get("name") or f.get("field", {}).get("name") or "").strip(): f.get("value") for f in (it.get("fields") or []) }
+                st = fields.get("slaps-state")
+                st = st.get("name") if isinstance(st, dict) else st
+                wv = fields.get("slaps-wave")
+                try:
+                    wv = int(wv) if not isinstance(wv, dict) else None
+                except Exception:
+                    wv = None
+                if num and st == "open" and wv == wave:
+                    out.append(num)
+            return sorted(out)
+
+    def gh_cache_get_open(self, wave: int) -> List[int]:
+        # Wait briefly for cache to appear on first use
+        cf = ItemsCache(Path('.slaps/cache/project_items.json'))
+        data = cf.read()
+        if not data:
+            import time as _t
+            for _ in range(3):
+                _t.sleep(2)
+                data = cf.read()
+                if data:
+                    break
+        return cf.get_open_issues(wave)
 
     def claim_and_verify(self, issue: int, timeout: float = 60.0) -> bool:
         if not self._atomic_lock_create(issue):
