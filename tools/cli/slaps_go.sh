@@ -68,6 +68,7 @@ export SLAPS_RECONCILE_SEC="$RECONCILE_SEC"
 export SLAPS_WORKER_IDLE_SLEEP="$IDLE_SLEEP"
 
 echo "[SLAPS] Settings: wave=$WAVE workers=$SLAPS_WORKERS refresh=${SLAPS_REFRESH_SEC}s blockers_ttl=${SLAPS_BLOCKERS_TTL}s reconcile=${SLAPS_RECONCILE_SEC}s idle_sleep=${SLAPS_WORKER_IDLE_SLEEP}s mode=$MODE"
+echo "[SLAPS] Starting log viewer (reuse+follow) in background..."
 
 if [[ "$START_LOGS" == "1" ]]; then
   # Start log viewer (reuse + follow). Non-blocking.
@@ -82,5 +83,11 @@ fi
 PY=${PYTHON:-python3}
 if ! command -v "$PY" >/dev/null 2>&1; then PY=python; fi
 
-exec "$PY" tools/cli/slaps_coord.py --waveStart "$WAVE" --mode "$MODE" "${PASS_THROUGH[@]}"
-
+mkdir -p .slaps/logs || true
+echo "[SLAPS] Launching coordinator (wave=$WAVE, mode=$MODE). Live log: .slaps/logs/coord.out"
+set +e
+"$PY" tools/cli/slaps_coord.py --waveStart "$WAVE" --mode "$MODE" "${PASS_THROUGH[@]}" 2>&1 | tee -a .slaps/logs/coord.out
+rc=${PIPESTATUS[0]}
+set -e
+echo "[SLAPS] Coordinator exited with rc=$rc"
+exit "$rc"

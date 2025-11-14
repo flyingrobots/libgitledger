@@ -246,6 +246,7 @@ def main() -> int:
         # determine maximum wave by probing GH; if it fails, run a single wave as requested
         try:
             max_wave = parse_max_wave_gh(gh)
+            print(f"[COORD] GH project ready. Will run waves {wave_start}..{max_wave} (inclusive)")
         except Exception as e:
             print(f"[COORD] Could not probe waves from GH: {type(e).__name__}: {e}. Falling back to waveStart only.", file=sys.stderr)
             traceback.print_exc()
@@ -278,8 +279,10 @@ def main() -> int:
             from .coordinator_gh import CoordinatorGH
             coord = CoordinatorGH(gh)
             wave_issue_num = coord.create_wave_status_issue(project, wave)
+            print(f"[COORD] Wave {wave} status issue: #{wave_issue_num}")
         if args.mode == 'gh':
             # Pass wave to watcher env for better progress comments
+            print(f"[COORD] Spawning watcher for wave {wave}. Watch logs: .slaps/logs/watcher.out (.err)")
             rc = run_watcher_gh(wave, wave_issue=wave_issue_num)
         else:
             rc = run_watcher(wave)
