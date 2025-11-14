@@ -295,6 +295,7 @@ class GHCLI(GHPort):
             """,
             "variables": {"projectId": project.id, "contentId": content_id}
         }
+        last_err = ""
         cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
         if cp.returncode == 0:
             try:
@@ -303,24 +304,45 @@ class GHCLI(GHPort):
                 iid = item.get("id")
                 if iid:
                     return iid
-            except Exception:
-                pass
+            except Exception as e:
+                last_err = f"graphql parse error: {e}"
+        else:
+            last_err = cp.stderr or "graphql add failed"
         # Fallback to CLI JSON
         try:
             out = self._run_ok(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id, "--format", "json"])
             data = json.loads(out or "{}")
             if isinstance(data, dict) and data.get("id"):
                 return data["id"]
-        except Exception:
-            pass
-        # As a last resort, try CLI without JSON and do not require id
-        cp2 = self._run(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id])
-        if cp2.returncode == 0:
-            # We might not get an id; attempt to re-find it
-            item_id = self.find_item_by_issue(project, issue_number)
-            if item_id:
-                return item_id
-        raise RuntimeError("failed to add issue to project")
+        except Exception as e:
+            last_err = f"project-id add failed: {e}"
+        # Fallback: owner/number with content-id
+        try:
+            out2 = self._run_ok(["gh", "project", "item-add", "--owner", project.owner, "--number", str(project.number), "--content-id", content_id, "--format", "json"])
+            data2 = json.loads(out2 or "{}")
+            if isinstance(data2, dict) and data2.get("id"):
+                return data2["id"]
+        except Exception as e:
+            last_err = f"owner/number add failed: {e}"
+        # Fallback: owner/number with URL
+        try:
+            url = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "url", "--jq", ".url")).strip()
+            cp3 = self._run(["gh", "project", "item-add", "--owner", project.owner, "--number", str(project.number), "--url", url])
+            if cp3.returncode == 0:
+                iid3 = self.find_item_by_issue(project, issue_number)
+                if iid3:
+                    return iid3
+            else:
+                last_err = cp3.stderr or last_err
+        except Exception as e:
+            last_err = f"url add failed: {e}"
+        # As a last resort, try minimal add without JSON and re-scan
+        cp4 = self._run(["gh", "project", "item-add", "--project-id", project.id, "--content-id", content_id])
+        if cp4.returncode == 0:
+            iid4 = self.find_item_by_issue(project, issue_number)
+            if iid4:
+                return iid4
+        raise RuntimeError(f"failed to add issue to project (last_err={last_err})")
 
     def list_items(self, project: GHProject) -> List[dict]:
         # Use GraphQL to page through items and normalize to gh project item-list JSON-ish shape
@@ -402,7 +424,8 @@ class GHCLI(GHPort):
                 except Exception:
                     return []
             data = json.loads(cp.stdout or "{}")
-            pj = (data.get("user") or {}).get("projectV2") or (data.get("organization") or {}).get("projectV2") or {}
+            root = data.get("data") or {}
+            pj = (root.get("user") or {}).get("projectV2") or (root.get("organization") or {}).get("projectV2") or {}
             conn = pj.get("items") or {}
             for n in conn.get("nodes", []):
                 content = n.get("content") or {}
