@@ -173,6 +173,11 @@ class GHWatcher:
             self.r.report(f"[SYSTEM] Wave discovery (RAW): found {len(out)} issues for wave {wave}")
         return out
 
+    # Back-compat shim: older caller expects a RAW-based enumerator name. Our GH
+    # enumerator already falls back to RAW when GH is unavailable, so just proxy.
+    def _list_wave_issues_from_raw(self, wave: int) -> Set[int]:
+        return self._list_wave_issues_from_gh(wave)
+
     def initialize_items(self, wave: int) -> None:
         assert self.state is not None
         project = self.state.project
