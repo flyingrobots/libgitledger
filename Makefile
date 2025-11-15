@@ -297,3 +297,16 @@ logs-view-classic:
 	@echo "Starting tmux log viewer (classic attach, no -CC)"
 	@python3 tools/tasks/log_viewer.py
 	@tmux attach -t slaps-logs
+
+.PHONY: slaps-doctor slaps-sentinel slaps-status
+slaps-doctor:
+	@echo "Running SLAPS Doctor (capability probe)"
+	@python3 tools/doctor/cap_probe.py
+
+slaps-sentinel:
+	@echo "Running SLAPS Sentinel (single check; exit non-zero on degraded)"
+	@python3 tools/doctor/sentinel.py
+
+slaps-status:
+	@echo "SLAPS Status (reads events.jsonl)"
+	@python3 tools/doctor/status.py
