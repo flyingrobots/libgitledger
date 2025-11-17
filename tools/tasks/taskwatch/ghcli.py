@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .ports import GHPort, GHProject, GHField
+from .cache import ItemsCache
 
 
 class _Runner:
@@ -19,6 +22,146 @@ class GHCLI(GHPort):
         self._repo = repo  # optional override for -R
         self._runner = runner or _Runner()
         self._retries = retries
+        try:
+            self._items_cache = ItemsCache(Path('.slaps/cache/project_items.json'))
+        except Exception:
+            self._items_cache = None
+        self._issue_cache_dir = Path('.slaps/cache/issues')
+        self._comments_cache_dir = Path('.slaps/cache/comments')
+        for d in (self._issue_cache_dir, self._comments_cache_dir):
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+        self.issue_cache_ttl = self._env_int('SLAPS_ISSUE_CACHE_TTL', 900)
+        self.comment_cache_ttl = self._env_int('SLAPS_COMMENT_CACHE_TTL', 180)
+
+    def _cache_fields(self, *, issue: Optional[int] = None, item_id: Optional[str] = None) -> Optional[Dict[str, str]]:
+        cache = getattr(self, '_items_cache', None)
+        if cache is None:
+            return None
+        try:
+            fields = cache.get_fields(issue=issue, item_id=item_id)
+        except Exception:
+            return None
+        if not fields:
+            return None
+        out: Dict[str, str] = {}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            out[key] = value if isinstance(value, str) else str(value)
+        return out
+
+    def _find_cached_item_id(self, issue_number: int) -> Optional[str]:
+        cache = getattr(self, '_items_cache', None)
+        if cache is None:
+            return None
+        try:
+            entry = cache.find_item(issue=issue_number)
+        except Exception:
+            return None
+        if entry and isinstance(entry.get('id'), str):
+            return entry['id']
+        return None
+
+    def _env_int(self, name: str, default: int, minimum: int = 0) -> int:
+        try:
+            value = int(os.environ.get(name, str(default)))
+            return value if value >= minimum else minimum
+        except Exception:
+            return default
+
+    def _issue_cache_path(self, issue_number: int) -> Path:
+        return self._issue_cache_dir / f"issue-{issue_number}.json"
+
+    def _comments_cache_path(self, issue_number: int) -> Path:
+        return self._comments_cache_dir / f"issue-{issue_number}.json"
+
+    def _cache_read_json(self, path: Path, ttl: int) -> Optional[Any]:
+        try:
+            if not path.exists():
+                return None
+            if ttl > 0 and (time.time() - path.stat().st_mtime) > ttl:
+                return None
+            text = path.read_text(encoding='utf-8')
+            return json.loads(text or '{}')
+        except Exception:
+            return None
+
+    def _cache_write_json(self, path: Path, payload: Any) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(path.suffix + '.tmp')
+            tmp.write_text(json.dumps(payload), encoding='utf-8')
+            os.replace(tmp, path)
+        except Exception:
+            pass
+
+    def _fetch_item_fields_remote(self, project: GHProject, item_id: str) -> Dict[str, str]:
+        q = {
+            "query": """
+            query($id:ID!) {
+              node(id:$id) {
+                ... on ProjectV2Item {
+                  id
+                  content { ... on Issue { number } }
+                  fieldValues(first:50) {
+                    nodes {
+                      ... on ProjectV2ItemFieldSingleSelectValue { field { name }
+                        name
+                      }
+                      ... on ProjectV2ItemFieldNumberValue { field { name }
+                        number
+                      }
+                      ... on ProjectV2ItemFieldTextValue { field { name }
+                        text
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """,
+            "variables": {"id": item_id}
+        }
+        cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+        if cp.returncode == 0:
+            try:
+                data = json.loads(cp.stdout or "{}")
+                node = ((data.get("data") or {}).get("node") or {})
+                fvals = ((node.get("fieldValues") or {}).get("nodes") or [])
+                out: Dict[str, str] = {}
+                for fv in fvals:
+                    fld = (fv.get("field") or {})
+                    nm = (fld.get("name") or "").strip()
+                    if not nm:
+                        continue
+                    if isinstance(fv.get("name"), str):
+                        out[nm] = fv.get("name")
+                    elif fv.get("number") is not None:
+                        out[nm] = str(fv.get("number"))
+                    elif fv.get("text") is not None:
+                        out[nm] = fv.get("text")
+                if out:
+                    return out
+            except Exception:
+                pass
+        # Fallback: scan list_items output
+        for it in self.list_items(project):
+            if it.get("id") != item_id:
+                continue
+            fields: Dict[str, str] = {}
+            for f in it.get("fields") or []:
+                nm = (f.get("name") or f.get("field", {}).get("name") or "").strip()
+                val = f.get("value")
+                if isinstance(val, dict) and "name" in val:
+                    fields[nm] = val.get("name")
+                elif val is not None:
+                    fields[nm] = str(val)
+            if fields:
+                return fields
+        return {}
 
     def _run(self, args: List[str]) -> subprocess.CompletedProcess:
         backoffs = [0.0, 0.5, 1.0, 2.0, 5.0]
@@ -642,23 +785,15 @@ class GHCLI(GHPort):
         self._edit_item_field(project, item_id, field, **{"single-select-option-id": field.options[option_value]})
 
     def get_item_fields(self, project: GHProject, item_id: str) -> Dict[str, str]:
-        # There is no direct “view one item” command; list and filter.
-        for it in self.list_items(project):
-            if it.get("id") == item_id:
-                vals: Dict[str, str] = {}
-                for f in it.get("fields") or []:
-                    nm = (f.get("name") or f.get("field", {}).get("name") or "").strip()
-                    val = f.get("value")
-                    if isinstance(val, dict) and "name" in val:  # single-select
-                        vals[nm] = val.get("name")
-                    elif val is None:
-                        pass
-                    else:
-                        vals[nm] = str(val)
-                return vals
-        return {}
+        cached = self._cache_fields(item_id=item_id)
+        if cached:
+            return cached
+        return self._fetch_item_fields_remote(project, item_id)
 
     def find_item_by_issue(self, project: GHProject, issue_number: int) -> Optional[str]:
+        cached_id = self._find_cached_item_id(issue_number)
+        if cached_id:
+            return cached_id
         # For each item, compare content.number if present
         for it in self.list_items(project):
             if not isinstance(it, dict):
@@ -681,7 +816,15 @@ class GHCLI(GHPort):
             raise RuntimeError(cp.stderr)
 
     def list_issue_comments(self, issue_number: int) -> List[dict]:
-        # GraphQL pagination of comments to ensure we see the latest
+        path = self._comments_cache_path(issue_number)
+        cached = self._cache_read_json(path, self.comment_cache_ttl)
+        if isinstance(cached, list):
+            return cached
+        data = self._fetch_issue_comments_remote(issue_number)
+        self._cache_write_json(path, data)
+        return data
+
+    def _fetch_issue_comments_remote(self, issue_number: int) -> List[dict]:
         owner = self._try_repo_owner()
         name = self._try_repo_name()
         if not owner or not name:
@@ -706,10 +849,9 @@ class GHCLI(GHPort):
             }
             cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
-                # Fallback to CLI JSON
                 out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "comments", "--jq", ".comments"))
                 try:
-                    arr = json.loads(out)
+                    arr = json.loads(out or "[]")
                     return [{"createdAt": (c.get("createdAt") or c.get("created_at") or ""), "body": (c.get("body") or "")} for c in arr or []]
                 except Exception:
                     return []
@@ -724,8 +866,20 @@ class GHCLI(GHPort):
         return out_arr
 
     def fetch_issue_json(self, issue_number: int) -> dict:
+        path = self._issue_cache_path(issue_number)
+        cached = self._cache_read_json(path, self.issue_cache_ttl)
+        if isinstance(cached, dict) and cached:
+            return cached
+        data = self._fetch_issue_json_remote(issue_number)
+        self._cache_write_json(path, data)
+        return data
+
+    def _fetch_issue_json_remote(self, issue_number: int) -> dict:
         out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "number,title,body,labels,url,state"))
-        return json.loads(out or "{}")
+        try:
+            return json.loads(out or "{}")
+        except Exception:
+            return {}
 
     def project_item_create_draft(self, project: GHProject, title: str, body: str) -> str:
         out = self._run_ok(["gh", "project", "item-create", str(project.number), "--owner", project.owner, "--title", title, "--body", body, "--format", "json"])

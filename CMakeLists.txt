@@ -183,7 +183,7 @@ else()
     message(STATUS "Doxygen not found: defining stub 'doxygen' target (no-op)")
     add_custom_target(
         doxygen
-        COMMAND ${CMAKE_COMMAND} -E echo "Doxygen not found; skipping docs generation"
+        COMMAND ${CMAKE_COMMAND} -E echo "Doxygen not found - skipping docs generation"
     )
 endif()
 

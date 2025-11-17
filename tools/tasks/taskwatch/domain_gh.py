@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -10,12 +11,15 @@ from .ports import FilePort, ReporterPort, GHPort, GHProject, GHField
 from .adapters import LocalFS
 from .logjson import JsonlLogger
 from .domain import extract_issue_number, get_blockers_from_raw
-from .cache import ItemsCache
+from .cache import ItemsCache, CACHE_TELEMETRY
 from .blockers_cache import BlockersCache
 from .waves_cache import WavesCache
 
 
 STATE_VALUES = ["open", "closed", "claimed", "failure", "dead", "blocked"]
+
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_LAST_POST: Dict[int, float] = {}
 
 
 class GHState:
@@ -58,7 +62,13 @@ class GHWatcher:
             self.blockers_ttl_sec = max(30, int(os.environ.get('SLAPS_BLOCKERS_TTL', '300')))
         except Exception:
             self.blockers_ttl_sec = 300
+        try:
+            self.cache_hit_warn = float(os.environ.get('SLAPS_CACHE_HIT_WARN', '0.7'))
+        except Exception:
+            self.cache_hit_warn = 0.7
+        self.cache_hit_warn = min(max(self.cache_hit_warn, 0.0), 1.0)
         self._last_cache_refresh_ts: float = 0.0
+        self._last_cache_stats_log = 0.0
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
@@ -252,32 +262,41 @@ class GHWatcher:
             blockers = set()
         if not blockers:
             return True
-        items = {it.get("content", {}).get("number"): it for it in self.gh.list_items(project)}
+        snapshot = self.cache.read() or {}
+        cached_items: Dict[int, dict] = {}
+        for it in (snapshot.get('items') or []):
+            try:
+                num = int(it.get('num'))
+            except Exception:
+                continue
+            cached_items[num] = it
         for b in blockers:
-            it = items.get(b)
-            if not it:
-                # If blocker not in project, fall back to label wave check
+            it = cached_items.get(b)
+            if it:
+                fields = it.get('fields') or {}
+                st = self._get_field_value(fields, "slaps-state")
+                bwave = self._get_field_value(fields, "slaps-wave")
+                try:
+                    bwave = int(bwave) if bwave is not None else None
+                except Exception:
+                    bwave = None
+                if st == "closed":
+                    continue
+                if bwave is not None and bwave < wave:
+                    continue
+                return False
+            else:
+                try:
+                    meta = self.gh.fetch_issue_json(b)
+                except Exception:
+                    meta = {}
+                state = (meta.get('state') or '').lower()
+                if state == 'closed':
+                    continue
                 bwave = self.gh.get_issue_wave_by_label(b)
                 if bwave is not None and bwave < wave:
                     continue
-                # Unknown blocker status -> treat as blocking
                 return False
-            fields = {}
-            for f in it.get("fields") or []:
-                nm = (f.get("name") or f.get("field", {}).get("name") or "").strip()
-                val = f.get("value")
-                fields[nm] = val.get("name") if isinstance(val, dict) else (str(val) if val is not None else None)
-            st = self._get_field_value(fields, "slaps-state")
-            bwave = self._get_field_value(fields, "slaps-wave")
-            try:
-                bwave = int(bwave) if bwave is not None else None
-            except Exception:
-                bwave = None
-            if st == "closed":
-                continue
-            if bwave is not None and bwave < wave:
-                continue
-            return False
         return True
 
     def unlock_sweep(self, wave: int) -> None:
@@ -316,9 +335,9 @@ class GHWatcher:
                         self._emit("unlock_open", issue=issue)
         if opened:
             self.r.report(f"[SYSTEM] Opened {opened} issues in wave {wave}")
-        # Refresh cache after reconciliation/opening
+        # Refresh cache after reconciliation/opening (force when mutations occurred)
         try:
-            self.refresh_cache()
+            self.refresh_cache(force=opened > 0)
         except Exception:
             pass
         # Reconcile occasionally via cache; skip heavy per-item API reconciliation here
@@ -387,9 +406,9 @@ class GHWatcher:
                         self._last_progress_post = now
             except Exception:
                 pass
-        # Refresh cache after claims processed
+        # Refresh cache after claims processed; force when we mutated GH state
         try:
-            self.refresh_cache()
+            self.refresh_cache(force=bool(new_claims))
         except Exception:
             pass
 
@@ -419,6 +438,32 @@ class GHWatcher:
             simple.append({'id': it.get('id'), 'num': num, 'fields': fields_map})
         self.cache.write(simple, now)
         self._last_cache_refresh_ts = now
+        self._log_cache_stats()
+
+    def _log_cache_stats(self) -> None:
+        stats = CACHE_TELEMETRY.snapshot(reset=True)
+        if not stats:
+            return
+        hit = stats.get('fields_hit', 0)
+        miss = stats.get('fields_miss', 0)
+        total = hit + miss
+        payload = dict(stats)
+        if total:
+            payload['fields_hit_rate'] = hit / total
+        if self.log:
+            self.log.emit('cache_stats', **payload)
+        warning = False
+        rate_pct = 0.0
+        if total:
+            rate = hit / total
+            rate_pct = rate * 100.0
+            if rate < self.cache_hit_warn:
+                warning = True
+        if self.r and total:
+            prefix = "[CACHE WARNING]" if warning else "[CACHE]"
+            self.r.report(f"{prefix} fields hit {hit}/{total} ({rate_pct:.1f}%) open_calls={stats.get('open_calls',0)} find_calls={stats.get('find_calls',0)}")
+        if warning and self.log:
+            self.log.emit('cache_stats_warning', threshold=self.cache_hit_warn, fields_hit=hit, fields_total=total)
 
     def reconcile_closed_state(self) -> None:
         """Occasional lightweight reconciliation: when GH issue is CLOSED, set slaps-state to closed.
@@ -478,10 +523,55 @@ class GHWorker:
         self.fields = fields
         self.wave = wave
         self.wave_issue = wave_issue
+        try:
+            self.items_cache = ItemsCache(Path('.slaps/cache/project_items.json'))
+        except Exception:
+            self.items_cache = None
+        self._progress_cooldown = self._resolve_progress_cooldown()
 
     def _emit(self, event: str, **kw) -> None:
         if self.log:
             self.log.emit(event, worker=self.worker_id, **kw)
+
+    def _resolve_progress_cooldown(self) -> int:
+        try:
+            return max(30, int(os.environ.get('SLAPS_PROGRESS_MIN_SEC', '120')))
+        except Exception:
+            return 120
+
+    def _cached_issue_fields(self, issue: int) -> Optional[Dict[str, str]]:
+        cache = getattr(self, 'items_cache', None)
+        if cache is None:
+            return None
+        try:
+            fields = cache.get_fields(issue=issue)
+        except Exception:
+            return None
+        return fields
+
+    def _fields_confirm_claim(self, fields: Optional[Dict[str, str]]) -> bool:
+        if not fields:
+            return False
+        try:
+            wid = int(fields.get("slaps-worker") or 0)
+        except Exception:
+            wid = 0
+        return wid == self.worker_id
+
+    def _cache_confirms_claim(self, issue: int) -> bool:
+        return self._fields_confirm_claim(self._cached_issue_fields(issue))
+
+    def _should_post_progress(self) -> bool:
+        if not self.wave_issue:
+            return False
+        cooldown = self._progress_cooldown
+        now = time.time()
+        with _PROGRESS_LOCK:
+            last = _PROGRESS_LAST_POST.get(self.wave_issue)
+            if last and (now - last) < cooldown:
+                return False
+            _PROGRESS_LAST_POST[self.wave_issue] = now
+        return True
 
     def _atomic_lock_create(self, issue: int) -> bool:
         self.fs.mkdirs(self.locks)
@@ -544,18 +634,22 @@ class GHWorker:
             return False
         self._emit("lock_create", issue=issue)
         # Wait for watcher to set GH fields
-        f_worker = self.fields["slaps-worker"]
         start = time.time()
         item_id = self.gh.ensure_issue_in_project(self.project, issue)
+        attempts = 0
+        remote_checked = False
         while time.time() - start < timeout:
-            fields = self.gh.get_item_fields(self.project, item_id)
-            try:
-                wid = int(fields.get("slaps-worker") or "0")
-            except Exception:
-                wid = 0
-            if wid == self.worker_id:
-                self.r.report(f"[WORKER:{self.worker_id:03d}] Verified claim on #{issue}")
+            if self._cache_confirms_claim(issue):
+                self.r.report(f"[WORKER:{self.worker_id:03d}] Verified claim on #{issue} (cache)")
                 return True
+            attempts += 1
+            # As a fallback, hit the API once after several cache misses
+            if not remote_checked and attempts >= 5:
+                fields = self.gh.get_item_fields(self.project, item_id)
+                if self._fields_confirm_claim(fields):
+                    self.r.report(f"[WORKER:{self.worker_id:03d}] Verified claim on #{issue}")
+                    return True
+                remote_checked = True
             time.sleep(2)
         # Timed out; relinquish
         self._remove_lock(issue)
@@ -612,6 +706,13 @@ class GHWorker:
                 data = json.loads(raw.read_text(encoding='utf-8'))
                 title = data.get('title') or title
                 body = data.get('body') or ''
+            except Exception:
+                pass
+        if not body:
+            try:
+                meta = self.gh.fetch_issue_json(issue)
+                title = meta.get('title') or title
+                body = meta.get('body') or body
             except Exception:
                 pass
         ac = self._extract_ac(body) or "## Acceptance Criteria\n- Execute the task as described."
@@ -749,6 +850,8 @@ class GHWorker:
     def _maybe_post_progress(self) -> None:
         if not self.wave_issue or not self.wave:
             return
+        if not self._should_post_progress():
+            return
         try:
             md = self._compose_progress_md(self.wave)
             self.gh.add_comment(self.wave_issue, md)
@@ -756,68 +859,77 @@ class GHWorker:
             pass
 
     def _compose_progress_md(self, wave: int) -> str:
-        # Snapshot project items for this wave
-        try:
-            items = self.gh.list_items(self.project)
-        except Exception:
-            items = []
-        # Filter by field slaps-wave == wave
-        def fval(it, name):
-            for f in it.get('fields') or []:
-                nm = (f.get('name') or f.get('field', {}).get('name') or '').strip()
-                if nm == name:
-                    v = f.get('value')
-                    return v.get('name') if isinstance(v, dict) else v
-            return None
-        inscope = [it for it in items if fval(it, 'slaps-wave') == wave]
-        open_issues = []
-        blocked_issues = []
-        closed_issues = []
-        failure_issues = []
-        dead_issues = []
-        claimed_issues = []
-        for it in inscope:
-            num = (it.get('content') or {}).get('number')
-            st = fval(it, 'slaps-state')
-            if st == 'open': open_issues.append(num)
-            elif st == 'blocked': blocked_issues.append(num)
-            elif st == 'closed': closed_issues.append(num)
-            elif st == 'failure': failure_issues.append(num)
-            elif st == 'dead': dead_issues.append(num)
-            elif st == 'claimed': claimed_issues.append(num)
-        # Blocked details
-        blocked_lines = []
-        for n in blocked_issues:
+        cache = getattr(self, 'items_cache', None)
+        snapshot = {}
+        if cache:
             try:
-                bs = self.gh.get_blockers(n) or []
+                snapshot = cache.read() or {}
             except Exception:
-                bs = []
-            for b in bs:
-                blocked_lines.append(f"- (#{n})-[blocked by]->(#{b})")
+                snapshot = {}
+        items = snapshot.get('items') or []
+        inscope: List[tuple[int, Dict[str, str]]] = []
+        for entry in items:
+            fields = (entry.get('fields') or {})
+            try:
+                entry_wave = int(fields.get('slaps-wave')) if fields.get('slaps-wave') is not None else None
+            except Exception:
+                entry_wave = None
+            if entry_wave != wave:
+                continue
+            try:
+                num = int(entry.get('num'))
+            except Exception:
+                continue
+            inscope.append((num, fields))
+        open_issues: List[int] = []
+        blocked_issues: List[int] = []
+        closed_issues: List[int] = []
+        failure_issues: List[int] = []
+        dead_issues: List[int] = []
+        claimed_issues: List[int] = []
+        for num, fields in inscope:
+            st = fields.get('slaps-state')
+            if st == 'open':
+                open_issues.append(num)
+            elif st == 'blocked':
+                blocked_issues.append(num)
+            elif st == 'closed':
+                closed_issues.append(num)
+            elif st == 'failure':
+                failure_issues.append(num)
+            elif st == 'dead':
+                dead_issues.append(num)
+            elif st == 'claimed':
+                claimed_issues.append(num)
         wave_status = 'pending'
         if dead_issues:
             wave_status = 'dead'
         elif not open_issues and not blocked_issues and not failure_issues and not claimed_issues:
             wave_status = 'complete'
-        def links(nums):
+
+        def links(nums: List[int]) -> str:
             return ', '.join(f"#{x}" for x in sorted(nums)) if nums else '(none)'
+
         md = (
             "## SLAPS Progress Update\n\n"
             "|  |  |\n|--|--|\n"
-            f"| **OPEN ISSUES:** | {len(open_issues)} |\n"
-            f"| **OPEN ISSUES:** | {links(open_issues)} |\n"
-            f"| **CLOSED ISSUES:** | {len(closed_issues)} |\n"
-            f"| **CLOSED ISSUES:** | {links(closed_issues)} |\n"
-            f"| **BLOCKED ISSUES:** | {len(blocked_issues)} |\n"
-            f"| **BLOCKED ISSUES:** | {'\n'.join(blocked_lines) if blocked_lines else '(none)'} |\n"
+            f"| **OPEN ISSUES:** | {len(open_issues)} ({links(open_issues)}) |\n"
+            f"| **CLOSED ISSUES:** | {len(closed_issues)} ({links(closed_issues)}) |\n"
+            f"| **BLOCKED ISSUES:** | {len(blocked_issues)} ({links(blocked_issues)}) |\n"
             f"| **WAVE STATUS:** | {wave_status} |\n\n"
             "### Issues\n\n"
         )
-        def line(icon, n, suffix=''):
+
+        def line(icon: str, n: int, suffix: str = '') -> str:
             return f"{icon} (#{n}){suffix}"
-        rows = []
-        for n in sorted(closed_issues): rows.append(line('✅', n))
-        for n in sorted(claimed_issues): rows.append(line('⏳', n))
-        for n in sorted(dead_issues): rows.append(line('🪦', n))
-        for n in sorted(failure_issues): rows.append(line('❌', n))
-        return md + ("\n".join(rows) + "\n")
+
+        rows: List[str] = []
+        for n in sorted(closed_issues):
+            rows.append(line('✅', n))
+        for n in sorted(claimed_issues):
+            rows.append(line('⏳', n))
+        for n in sorted(dead_issues):
+            rows.append(line('🪦', n))
+        for n in sorted(failure_issues):
+            rows.append(line('❌', n))
+        return md + (("\n".join(rows) + "\n") if rows else '')
