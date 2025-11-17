@@ -27,6 +27,10 @@ from .taskwatch.logjson import JsonlLogger
 from .taskwatch.ghcli import GHCLI
 
 
+def _debug(msg: str) -> None:
+    print(f"[COORD DEBUG] {msg}", flush=True)
+
+
 def parse_max_wave(roadmap: Path) -> int:
     if not roadmap.exists():
         return 0
@@ -44,9 +48,16 @@ def parse_max_wave_gh(gh: GHCLI) -> int:
     max_w = 0
     for w in range(1, 51):
         try:
-            if gh.list_issues_for_wave(w):
+            _debug(f"Probing GH for wave {w}")
+            issues = gh.list_issues_for_wave(w)
+            _debug(f"Wave {w} issues discovered: {len(issues)}")
+            if issues:
                 max_w = w
-        except Exception:
+            elif max_w > 0:
+                _debug(f"Wave {w} empty after discovering wave {max_w}; stopping probe")
+                break
+        except Exception as e:
+            _debug(f"Wave probe failed at {w}: {e}")
             break
     return max_w
 
@@ -197,8 +208,11 @@ def main() -> int:
     base = Path('.slaps/tasks')
     jsonl = JsonlLogger(path=base.parent / 'logs' / 'events.jsonl')
     # Preflight environment
+    _debug("Starting preflight checks")
     if preflight(jsonl, no_commit=args.no_commit_preflight) != 0:
+        _debug("Preflight failed; aborting")
         return 1
+    _debug("Preflight succeeded")
 
     # Helper: post a project update draft item (optional if gh available)
     gh = None
@@ -244,6 +258,7 @@ def main() -> int:
 
     if args.mode == 'gh':
         # determine maximum wave by probing GH; if it fails, run a single wave as requested
+        _debug("Bootstrapping GitHub project metadata")
         try:
             max_wave = parse_max_wave_gh(gh)
             print(f"[COORD] GH project ready. Will run waves {wave_start}..{max_wave} (inclusive)")
@@ -251,6 +266,7 @@ def main() -> int:
             print(f"[COORD] Could not probe waves from GH: {type(e).__name__}: {e}. Falling back to waveStart only.", file=sys.stderr)
             traceback.print_exc()
             max_wave = wave_start
+        _debug(f"GitHub bootstrap complete (max_wave={max_wave})")
         if wave_start <= 0 or max_wave <= 0:
             print('Invalid waveStart or no waves found on GH', file=sys.stderr)
             return 2
@@ -263,6 +279,7 @@ def main() -> int:
 
     for wave in range(wave_start, max_wave + 1):
         jsonl.emit('wave_start', wave=wave)
+        _debug(f"Wave {wave}: watcher start")
         print(f"[COORD] Running watcher for wave {wave}")
         # Post wave start update
         pct = int(((wave - 1) / max_wave) * 100)
@@ -288,8 +305,10 @@ def main() -> int:
             rc = run_watcher(wave)
         jsonl.emit('watcher_finish', wave=wave, rc=rc)
         if rc != 0:
+            _debug(f"Wave {wave}: watcher exited rc={rc}")
             print(f"[COORD] Watcher returned {rc}; aborting", file=sys.stderr)
             return 1
+        _debug(f"Wave {wave}: watcher completed successfully")
 
         # Process follow-ups and run a follow-up watcher pass if any were enqueued
         frc = run_followups(wave, jsonl)
@@ -308,6 +327,7 @@ def main() -> int:
             counts = coord.compute_counts(project, wave)
             jsonl.emit('gh_counts', wave=wave, **counts)
             if coord.should_abort(counts):
+                _debug(f"Wave {wave}: GH project has dead items; aborting")
                 print(f"[COORD] Dead items present in project. Aborting.", file=sys.stderr)
                 return 1
         elif args.mode == 'gh' and project is None:
@@ -320,15 +340,18 @@ def main() -> int:
                 return 1
 
         print(f"[COORD] Running Quality Guardian LLM")
+        _debug("Invoking guardian")
         rc = run_guardian(jsonl)
         if rc != 0:
             print(f"[COORD] Guardian returned {rc}; aborting", file=sys.stderr)
             return 1
         # Push changes after guardian success
+        _debug("Guardian succeeded; pushing changes")
         prc = push_changes(jsonl)
         if prc != 0:
             print(f"[COORD] git push failed with {prc}; aborting", file=sys.stderr)
             return 1
+        _debug(f"Wave {wave}: complete")
         jsonl.emit('wave_complete', wave=wave)
         # Post wave complete update
         pct2 = int((wave / max_wave) * 100)

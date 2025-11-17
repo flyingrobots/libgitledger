@@ -114,7 +114,7 @@ def main() -> int:
                 "query": "mutation($id:ID!){ deleteProjectV2Item(input:{itemId:$id}){ deletedItemId }}",
                 "variables": {"id": draft_id},
             }
-            _ = run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            _ = run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
 
     caps = CapabilityDoc(
         gh_version=gh_version(),
@@ -134,4 +134,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

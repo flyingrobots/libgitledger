@@ -75,8 +75,11 @@ class GHWatcher:
             self.log.emit(event, **kw)
 
     def preflight(self, wave: int) -> None:
+        self.r.report(f"[GH DEBUG] preflight start for wave {wave}") if self.r else None
         project = self.gh.ensure_project(self.project_title)
+        self.r.report(f"[GH DEBUG] ensured project {project.title} (#{project.number})") if self.r else None
         fields = self.gh.ensure_fields(project, STATE_VALUES)
+        self.r.report("[GH DEBUG] ensured SLAPS fields") if self.r else None
         self.state = GHState(project, fields)
         # Validate slaps-state options present
         try:
@@ -284,6 +287,8 @@ class GHWatcher:
                     continue
                 if bwave is not None and bwave < wave:
                     continue
+                if self.r:
+                    self.r.report(f"[BLOCKERS DEBUG] issue #{issue} blocked by #{b} (state={st or 'unknown'})")
                 return False
             else:
                 try:
@@ -292,10 +297,14 @@ class GHWatcher:
                     meta = {}
                 state = (meta.get('state') or '').lower()
                 if state == 'closed':
+                    if self.r:
+                        self.r.report(f"[BLOCKERS DEBUG] blocker #{b} closed via GH metadata; ignoring")
                     continue
                 bwave = self.gh.get_issue_wave_by_label(b)
                 if bwave is not None and bwave < wave:
                     continue
+                if self.r:
+                    self.r.report(f"[BLOCKERS DEBUG] issue #{issue} blocked by external #{b} (state={state or 'unknown'})")
                 return False
         return True
 
@@ -322,6 +331,8 @@ class GHWatcher:
             st = self._get_field_value(fields, "slaps-state")
             if st in ("blocked", "failure"):
                 if self._blockers_satisfied(wave, issue):
+                    if self.r:
+                        self.r.report(f"[BLOCKERS DEBUG] opening issue #{issue} (prev state={st})")
                     # Only open if attempt count < 3. Dead-letter is handled at worker time.
                     f_attempt = self.state.field("slaps-attempt-count")
                     try:
@@ -386,7 +397,8 @@ class GHWatcher:
             self.gh.set_item_single_select(prj, item_id, f_state, "claimed")
             self.gh.add_label(issue, "slaps-wip")
             self._emit("claimed", issue=issue, worker=wid)
-            self.r.report(f"[SYSTEM] Claimed issue #{issue} for worker {wid}")
+            if self.r:
+                self.r.report(f"[SYSTEM] Claimed issue #{issue} for worker {wid}")
             new_claims.append((issue, wid))
         # Update heartbeat at end of pass
         self._heartbeat()

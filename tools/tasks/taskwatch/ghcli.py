@@ -125,7 +125,7 @@ class GHCLI(GHPort):
             """,
             "variables": {"id": item_id}
         }
-        cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+        cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
         if cp.returncode == 0:
             try:
                 data = json.loads(cp.stdout or "{}")
@@ -282,7 +282,7 @@ class GHCLI(GHPort):
             after = None
             while True:
                 q["variables"]["after"] = after
-                cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+                cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
                 if cp.returncode != 0:
                     return []
                 data = json.loads(cp.stdout or "{}")
@@ -362,6 +362,9 @@ class GHCLI(GHPort):
         - Re-creates `slaps-state` if required options are missing.
         """
         # GraphQL listing via node(id: project.id) so we don't depend on owner type
+        def _log_debug(msg: str) -> None:
+            print(f"[GHCLI DEBUG] {msg}", flush=True)
+
         def _list_fields_by_id(pid: str) -> List[dict]:
             q = {
                 "query": """
@@ -387,7 +390,7 @@ class GHCLI(GHPort):
             after = None
             while True:
                 q["variables"]["after"] = after
-                cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+                cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
                 if cp.returncode != 0:
                     return []
                 data = json.loads(cp.stdout or "{}")
@@ -401,35 +404,40 @@ class GHCLI(GHPort):
             return out
 
         existing_map: Dict[str, dict] = {}
+        _log_debug(f"Listing fields via GraphQL for project {project.title}")
         for f in _list_fields_by_id(project.id) or []:
             if isinstance(f, dict) and isinstance(f.get("name"), str):
                 existing_map[f["name"]] = f
         # Fallback to CLI JSON if GraphQL fails
         if not existing_map:
+            _log_debug("GraphQL field list empty; falling back to gh project field-list")
+            def _normalize_field(raw: Any) -> Optional[dict]:
+                if not isinstance(raw, dict):
+                    return None
+                name = raw.get("name")
+                if not isinstance(name, str) or not name:
+                    return None
+                norm = dict(raw)
+                norm["dataType"] = norm.get("dataType") or norm.get("type") or "TEXT"
+                opts = norm.get("options")
+                if isinstance(opts, dict):
+                    opts = opts.get("nodes") or opts.get("items") or []
+                norm["options"] = opts if isinstance(opts, list) else []
+                return norm
             try:
                 out = self._run_ok(["gh", "project", "field-list", str(project.number), "--owner", project.owner, "--format", "json"])
                 parsed = json.loads(out or "[]")
+                items: List[Any] = []
                 if isinstance(parsed, list):
-                    for f in parsed:
-                        if not isinstance(f, dict):
-                            continue
-                        # normalize CLI shape
-                        if "dataType" not in f and "type" in f:
-                            f["dataType"] = f.get("type")
-                        if "options" not in f:
-                            f["options"] = []
-                        if isinstance(f.get("name"), str):
-                            existing_map[f["name"]] = f
+                    items = parsed
                 elif isinstance(parsed, dict):
-                    for f in (parsed.get("fields") or []):
-                        if not isinstance(f, dict):
-                            continue
-                        if "dataType" not in f and "type" in f:
-                            f["dataType"] = f.get("type")
-                        if "options" not in f:
-                            f["options"] = []
-                        if isinstance(f.get("name"), str):
-                            existing_map[f["name"]] = f
+                    items = parsed.get("fields") or parsed.get("items") or []
+                if isinstance(items, list):
+                    for fld in items:
+                        norm = _normalize_field(fld)
+                        if norm:
+                            existing_map[norm["name"]] = norm
+                _log_debug(f"CLI field-list returned {len(existing_map)} entries")
             except Exception:
                 existing_map = {}
 
@@ -440,9 +448,13 @@ class GHCLI(GHPort):
             if f:
                 opts = None
                 if dtype == "SINGLE_SELECT":
-                    opts = {o["name"]: o["id"] for o in (f.get("options") or [])}
+                    opts = {}
+                    for o in (f.get("options") or []):
+                        if isinstance(o, dict) and isinstance(o.get("name"), str):
+                            opts[o["name"]] = o.get("id", o.get("name"))
                 # Older gh may present `type` instead of `dataType` — normalize
                 dt = f.get("dataType") or f.get("type") or dtype
+                _log_debug(f"Reusing existing field '{name}' (dataType={dt})")
                 return GHField(id=f.get("id",""), name=f.get("name",""), data_type=str(dt), options=opts)
             # Create via CLI (gh doesn't expose field-create in GraphQL yet)
             args = [
@@ -451,6 +463,7 @@ class GHCLI(GHPort):
             ]
             if dtype == "SINGLE_SELECT" and options:
                 args += ["--single-select-options", ",".join(options)]
+            _log_debug(f"Creating project field '{name}' (dtype={dtype})")
             self._run(args)
             # Re-list to capture ids/options
             existing_map.clear()
@@ -504,7 +517,7 @@ class GHCLI(GHPort):
             "variables": {"projectId": project.id, "contentId": content_id}
         }
         last_err = ""
-        cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+        cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
         if cp.returncode == 0:
             try:
                 data = json.loads(cp.stdout or "{}")
@@ -594,7 +607,7 @@ class GHCLI(GHPort):
                 """,
                 "variables": {"owner": owner, "number": number, "after": cursor}
             }
-            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 # Fallback to CLI for small projects
                 try:
@@ -676,7 +689,7 @@ class GHCLI(GHPort):
                 """,
                 "variables": {"owner": owner, "name": name, "label": label, "after": cursor}
             }
-            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 # Fallback: try gh issue list (open only), then milestone title
                 try:
@@ -743,7 +756,7 @@ class GHCLI(GHPort):
         after = None
         while True:
             q["variables"]["after"] = after
-            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 return []  # fallback: unknown
             data = json.loads(cp.stdout or "{}")
@@ -847,7 +860,7 @@ class GHCLI(GHPort):
                 """,
                 "variables": {"owner": owner, "name": name, "number": issue_number, "after": cursor}
             }
-            cp = self._run(["gh", "api", "graphql", "-f", f"query={json.dumps(q['query'])}", "-f", f"variables={json.dumps(q['variables'])}"])
+            cp = self._run(["gh", "api", "graphql", "-f", f"query={q['query']}", "-f", f"variables={json.dumps(q['variables'])}"])
             if cp.returncode != 0:
                 out = self._run_ok(self._gh("issue", "view", str(issue_number), "--json", "comments", "--jq", ".comments"))
                 try:
